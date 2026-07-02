@@ -1740,6 +1740,20 @@
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════
+     MODAL: Lady of the Lake — Broadcast / Read Receipt
+═══════════════════════════════════════════════════════════════ -->
+<div id="lady-broadcast-modal" class="modal-backdrop">
+  <div class="modal-box" style="text-align:center;">
+    <div style="font-size:34px;margin-bottom:8px;">💧</div>
+    <h3 class="modal-title">Lady of the Lake</h3>
+    <p id="lady-broadcast-text" style="font-size:13px;color:var(--parchment);margin-bottom:16px;line-height:1.5;"></p>
+    <button id="lady-broadcast-btn" class="btn-primary btn-small">I've Read This</button>
+    <p id="lady-broadcast-waiting" style="font-size:11px;color:var(--parchment-dim);margin-top:12px;display:none;">Waiting for the others to read...</p>
+    <p id="lady-broadcast-count" style="font-size:11px;color:var(--gold-dim);margin-top:8px;"></p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
      MODAL: Assassin Phase
 ═══════════════════════════════════════════════════════════════ -->
 <div id="assassin-modal" class="modal-backdrop">
@@ -1825,8 +1839,30 @@
 <div id="disconnect-alert">
   <div style="font-size:48px;margin-bottom:16px;">📡</div>
   <h3 class="font-cinzel" style="color:var(--red-evil-l);font-size:18px;margin-bottom:8px;">Connection Lost</h3>
-  <p id="disconnect-msg" style="color:var(--parchment-dim);font-size:13px;margin-bottom:24px;line-height:1.6;"></p>
-  <p style="font-size:11px;color:var(--parchment-dim);">Awaiting admin intervention...</p>
+  <p id="disconnect-msg" style="color:var(--parchment-dim);font-size:13px;margin-bottom:20px;line-height:1.6;"></p>
+  <div id="disconnect-choice-buttons" style="display:none;gap:10px;flex-wrap:wrap;justify-content:center;margin-bottom:10px;">
+    <button id="disconnect-wait-btn" class="btn-primary btn-small" style="min-width:160px;">⏳ Wait for Reconnect</button>
+    <button id="disconnect-terminate-btn" class="btn-danger btn-small" style="min-width:160px;">🛑 Terminate Game</button>
+  </div>
+  <div id="disconnect-waiting-note" style="display:none;flex-direction:column;align-items:center;gap:10px;">
+    <p style="font-size:11px;color:var(--parchment-dim);">Gameplay is frozen until they return.</p>
+    <button id="disconnect-terminate-btn2" class="btn-danger btn-small" style="min-width:160px;">🛑 Terminate Game Instead</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     MODAL: Reconnect Prompt (shown to the player who came back)
+═══════════════════════════════════════════════════════════════ -->
+<div id="reconnect-modal" class="modal-backdrop">
+  <div class="modal-box" style="text-align:center;">
+    <div style="font-size:36px;margin-bottom:8px;">🔌</div>
+    <h3 class="modal-title">Welcome Back!</h3>
+    <p style="font-size:13px;color:var(--parchment-dim);margin-bottom:18px;line-height:1.5;">You were disconnected. The other players chose to wait for you. Would you like to get back into the game?</p>
+    <div style="display:flex;gap:10px;">
+      <button id="reconnect-no-btn" class="btn-secondary btn-small" style="flex:1;">No, Leave</button>
+      <button id="reconnect-yes-btn" class="btn-primary btn-small" style="flex:1;">Yes, Rejoin</button>
+    </div>
+  </div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════
@@ -1945,6 +1981,8 @@ let _state = {
   myQuestCard:      null,
   ladyHolder:       0,
   ladyEnabled:      false,
+  ladyBroadcast:    null,
+  disconnectInfo:   null,      // {playerId,playerName,status:'choice'|'waiting'} or null
   questVotes:       {},       // {playerId: 'approve'|'reject'}
   questCards:       {},       // {playerId: 'success'|'fail'} (server-side anonymized)
   revealedCount:    0,
@@ -2696,10 +2734,32 @@ function buildRoleSet(n) {
   const evilN  = GAME_TEXT_CONFIG.evilCount[n]||2;
   const goodN  = n - evilN;
   let goodPool = shuffle(["merlin","percival","good_generic","good_generic_alt","good_generic","good_generic_alt"]);
-  let evilPool = shuffle(["assassin","morgana","mordred","oberon","evil_generic","evil_generic_alt"]);
-  // Always include merlin + assassin
+  // Always include merlin
   const goodRoles = ["merlin", ...goodPool.filter(r=>r!=='merlin').slice(0, goodN-1)];
-  const evilRoles = ["assassin", ...evilPool.filter(r=>r!=='assassin').slice(0, evilN-1)];
+
+  // Evil side always starts with Assassin. Special evil roles (Morgana/Mordred/Oberon)
+  // are filled in next, at random. "Minion of Mordred" (the generic evil filler role)
+  // is only ever used once BOTH Assassin and Morgana are already in the game — for a
+  // 5-player game (2 evil slots: Assassin + 1 more) that means it can never appear,
+  // since there's no room left for a 3rd evil role after Assassin + Morgana.
+  let evilSpecialPool = shuffle(["morgana","mordred","oberon"]);
+  let genericPool     = shuffle(["evil_generic","evil_generic_alt","evil_generic","evil_generic_alt"]);
+  const evilRoles = ["assassin"];
+
+  while(evilRoles.length < evilN) {
+    const hasMorgana = evilRoles.includes('morgana');
+    if(evilSpecialPool.length>0) {
+      // Prefer filling remaining special roles before ever touching the generic pool
+      evilRoles.push(evilSpecialPool.shift());
+    } else if(hasMorgana) {
+      // Only allowed to use "Minion of Mordred" once Morgana (and Assassin) are in
+      evilRoles.push(genericPool.shift());
+    } else {
+      // Out of specials and Morgana isn't in — fall back to a generic slot rather
+      // than stall (extremely rare edge case for very small evil counts).
+      evilRoles.push(genericPool.shift());
+    }
+  }
   return shuffle([...goodRoles, ...evilRoles]);
 }
 
@@ -3307,12 +3367,14 @@ function showQuestTally(cards, failsReq) {
   $('reveal-tally-text').innerHTML=`${isSuccess?'🛡️ SUCCESS':'💀 FAIL'}: <span style="color:var(--success-green)">✅ ${succs}</span> | <span style="color:var(--fail-red)">💀 ${fails}</span>`;
   $('reveal-tally-text').style.color=isSuccess?'var(--success-green)':'var(--fail-red)';
 
-  // Log to history (anonymous)
+  // Log to history (quest outcome is anonymous, but the roster of who went is public)
+  const teamNames = _state.selectedTeam.map(ti=>_state.players[ti]?.name).filter(Boolean);
   _state.matchHistory.push({
     quest: _state.questIndex+1,
     result: isSuccess?'success':'fail',
     teamSize: _state.selectedTeam.length,
     successes: succs, fails: fails,
+    team: teamNames,
   });
 
   $('reveal-continue-btn').style.display='block';
@@ -3386,16 +3448,66 @@ function showLadyModal() {
   showModal('lady-modal');
   $('lady-close-btn').onclick=()=>{
     if(selected!==null) {
-      // Pass token
-      const oldHolder=_state.ladyHolder;
-      _state.ladyHolder=selected;
       hideModal('lady-modal');
-      showToast(`Lady token passed to ${_state.players[selected].name}`, 'info');
-      _state.phase='nominate';
-      renderTable(); renderQuestBoard(); renderBottomStrip(); setNavPhase('Nomination');
+      broadcastLadyChoice(_state.ladyHolder, selected);
     }
   };
 }
+
+// Broadcast who the Lady holder chose to inspect, and wait for everyone to
+// acknowledge reading it before the token actually passes and the game continues.
+function broadcastLadyChoice(fromIdx, toIdx) {
+  const fromP=_state.players[fromIdx], toP=_state.players[toIdx];
+  const uid=_state.currentUser?.uid;
+  if(!fromP || !toP) return;
+  const payload={ fromIdx, toIdx, fromName:fromP.name, toName:toP.name, ack:{ [uid]:true } };
+
+  if(!_state.db || !window._firebaseModules) {
+    // No live room to broadcast to — pass the token immediately.
+    _state.ladyHolder=toIdx;
+    _state.phase='nominate';
+    renderTable(); renderQuestBoard(); renderBottomStrip(); setNavPhase('Nomination');
+    return;
+  }
+  const { ref, update } = window._firebaseModules;
+  update(ref(_state.db), { [`rooms/${_state.roomCode}/ladyBroadcast`]: payload }).catch(e=>showToast(e.message,'error'));
+}
+
+// Renders the "X chooses Y to show his/her Loyalty" prompt to every player,
+// tracks read receipts, and finalizes the token pass once everyone has read it.
+function handleLadyBroadcast(broadcast) {
+  if(!broadcast) { hideModal('lady-broadcast-modal'); return; }
+  const uid=_state.currentUser?.uid;
+  const ack=broadcast.ack||{};
+  const ackCount=Object.keys(ack).length;
+  const n=_state.players.length || 1;
+  const alreadyRead=!!ack[uid];
+
+  $('lady-broadcast-text').textContent=`${broadcast.fromName} chooses ${broadcast.toName} to show his/her Loyalty.`;
+  $('lady-broadcast-count').textContent=`${Math.min(ackCount,n)}/${n} players have read`;
+  $('lady-broadcast-btn').style.display=alreadyRead?'none':'block';
+  $('lady-broadcast-waiting').style.display=alreadyRead?'block':'none';
+  showModal('lady-broadcast-modal');
+
+  if(ackCount>=n) {
+    hideModal('lady-broadcast-modal');
+    if(_state.db && window._firebaseModules) {
+      const { ref, update } = window._firebaseModules;
+      update(ref(_state.db), {
+        [`rooms/${_state.roomCode}/ladyHolder`]: broadcast.toIdx,
+        [`rooms/${_state.roomCode}/phase`]: 'nominate',
+        [`rooms/${_state.roomCode}/ladyBroadcast`]: null,
+      }).catch(()=>{});
+    }
+  }
+}
+
+$('lady-broadcast-btn')?.addEventListener('click', ()=>{
+  const uid=_state.currentUser?.uid;
+  if(!uid || !_state.db || !window._firebaseModules || !_state.roomCode) return;
+  const { ref, update } = window._firebaseModules;
+  update(ref(_state.db), { [`rooms/${_state.roomCode}/ladyBroadcast/ack/${uid}`]: true }).catch(e=>showToast(e.message,'error'));
+});
 
 /* ════════════════════════════════════════════════════════════════
    ASSASSIN PHASE
@@ -3446,7 +3558,12 @@ function endGame(result) {
   const sub=$('endgame-subtitle');
   const roles=$('endgame-roles');
 
-  if(result==='good'||result==='merlin') {
+  if(result==='terminated') {
+    icon.textContent='🏳️';
+    title.textContent='Game Terminated';
+    title.style.color='var(--amber, var(--gold))';
+    sub.textContent='A player disconnected and the game was ended early. This match is recorded as a Draw.';
+  } else if(result==='good'||result==='merlin') {
     if(result==='merlin') {
       icon.textContent='🗡️';
       title.textContent='Evil Triumphs!';
@@ -3492,15 +3609,23 @@ function persistMatchResultToAccount(result) {
   const roleDef   = GAME_TEXT_CONFIG.roles[myRoleKey] || {};
   const myAlignGood = isGoodRole(myRoleKey);
 
-  // 'good' = good team won normally, 'merlin' = evil won via assassination, else evil won
-  const goodWon = (result === 'good');
-  const iWon = myAlignGood ? goodWon : !goodWon;
+  let entryResult;
+  if(result==='terminated') {
+    // A disconnect ended the game early — nobody wins or loses.
+    entryResult='draw';
+  } else {
+    // 'good' = good team won normally, 'merlin' = evil won via assassination, else evil won
+    const goodWon = (result === 'good');
+    const iWon = myAlignGood ? goodWon : !goodWon;
+    entryResult = iWon ? 'win' : 'loss';
+  }
 
   const entry = {
     code:   _state.roomCode || '—',
     date:   Date.now(),
-    result: iWon ? 'win' : 'loss',
+    result: entryResult,
     role:   roleDef.name || myRoleKey,
+    ...(result==='terminated' ? { note:'Game Terminated (Player Disconnected)' } : {}),
   };
 
   _state.previousGames = [entry, ...(_state.previousGames||[])].slice(0, 50);
@@ -3662,14 +3787,18 @@ function renderSidebarPreviousGames() {
   // Most recent first
   const sorted = [...games].sort((a,b)=>(b.date||0)-(a.date||0));
   list.innerHTML = sorted.slice(0, 20).map(g => {
+    const isDraw = g.result === 'draw';
     const win = g.result === 'win';
+    const badgeText  = isDraw ? 'DRAW' : (win ? 'WIN' : 'LOSS');
+    const badgeBg    = isDraw ? 'rgba(212,175,55,0.15)' : (win ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)');
+    const badgeColor = isDraw ? 'var(--gold)' : (win ? 'var(--success-green)' : 'var(--fail-red)');
     const dateStr = g.date ? new Date(g.date).toLocaleDateString(undefined,{month:'short',day:'numeric'}) : '';
     return `<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;padding:7px 9px;background:rgba(255,255,255,0.03);border:1px solid var(--gold-dim);border-radius:8px;font-size:10px;">
       <div style="display:flex;flex-direction:column;gap:1px;overflow:hidden;">
         <span style="color:var(--parchment);font-family:'Cinzel',serif;">${g.code||'—'}</span>
-        <span style="color:var(--parchment-dim);">${dateStr} · ${g.role||'—'}</span>
+        <span style="color:var(--parchment-dim);">${dateStr} · ${g.role||'—'}${g.note?` · ${g.note}`:''}</span>
       </div>
-      <span style="flex-shrink:0;padding:2px 7px;border-radius:10px;font-size:9px;font-weight:700;background:${win?'rgba(34,197,94,0.15)':'rgba(239,68,68,0.15)'};color:${win?'var(--success-green)':'var(--fail-red)'};">${win?'WIN':'LOSS'}</span>
+      <span style="flex-shrink:0;padding:2px 7px;border-radius:10px;font-size:9px;font-weight:700;background:${badgeBg};color:${badgeColor};">${badgeText}</span>
     </div>`;
   }).join('');
 }
@@ -3796,16 +3925,26 @@ function updateHistorySheet() {
   content.innerHTML='';
   _state.matchHistory.forEach(h=>{
     const isS=h.result==='success';
+    const teamList=(h.team||[]).join(', ')||'—';
     const div=document.createElement('div');
     div.className='log-entry fade-slide-up';
+    div.style.display='flex';
+    div.style.justifyContent='space-between';
+    div.style.gap='10px';
     div.innerHTML=`
-      <div class="log-quest-num">Quest ${h.quest}</div>
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span class="status-badge ${isS?'badge-success':'badge-fail'}">${isS?'✅ SUCCESS':'❌ FAIL'}</span>
-        <span style="font-size:10px;color:var(--parchment-dim);">${h.teamSize} players</span>
+      <div style="flex:1;min-width:0;">
+        <div class="log-quest-num">Quest ${h.quest}</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="status-badge ${isS?'badge-success':'badge-fail'}">${isS?'✅ SUCCESS':'❌ FAIL'}</span>
+          <span style="font-size:10px;color:var(--parchment-dim);">${h.teamSize} players</span>
+        </div>
+        <div style="font-size:10px;color:var(--parchment-dim);margin-top:4px;">
+          🛡️ ${h.successes} Success · 💀 ${h.fails} Fail
+        </div>
       </div>
-      <div style="font-size:10px;color:var(--parchment-dim);margin-top:4px;">
-        🛡️ ${h.successes} Success · 💀 ${h.fails} Fail
+      <div style="flex:0 0 40%;max-width:40%;text-align:right;font-size:10px;color:var(--parchment-dim);border-left:1px solid rgba(212,175,55,0.1);padding-left:8px;">
+        <div style="color:var(--gold-dim);font-family:'Cinzel',serif;font-size:9px;margin-bottom:3px;">WENT ON QUEST</div>
+        ${teamList}
       </div>`;
     content.appendChild(div);
   });
@@ -3926,7 +4065,7 @@ $('asset-file-input')?.addEventListener('change',e=>{
 ════════════════════════════════════════════════════════════════ */
 function setupDisconnectHandlers() {
   if(DEMO_MODE_ACTIVE || !_state.db || !window._firebaseModules) return;
-  const { ref, onValue, onDisconnect } = window._firebaseModules;
+  const { ref, onValue, onDisconnect, set } = window._firebaseModules;
   const uid=_state.currentUser?.uid;
   if(!uid) return;
 
@@ -3936,26 +4075,109 @@ function setupDisconnectHandlers() {
     if(snap.val()===true) {
       const myPresRef=ref(_state.db,`rooms/${_state.roomCode}/players/${uid}/connected`);
       onDisconnect(myPresRef).set(false);
-      const { set } = window._firebaseModules;
       set(myPresRef,true);
+      // I just (re)connected — if the others were waiting on me, ask if I want back in.
+      checkReconnectPrompt();
     }
   });
 
-  // Watch all player connections
+  // Watch all player connections to detect/clear a disconnect
   const playersRef=ref(_state.db,`rooms/${_state.roomCode}/players`);
   onValue(playersRef, snap=>{
     const data=snap.val()||{};
-    Object.entries(data).forEach(([id,p])=>{
-      if(!p.connected && id!==uid) {
-        const name=p.name||'A player';
-        $('disconnect-msg').textContent=`${name} has disconnected. Gameplay is frozen. Awaiting admin action.`;
-        $('disconnect-alert').classList.add('active');
-      }
-    });
-    const allConnected=Object.values(data).every(p=>p.connected);
-    if(allConnected) $('disconnect-alert').classList.remove('active');
+    const disconnectedEntry=Object.entries(data).find(([id,p])=>!p.connected && id!==uid);
+    if(disconnectedEntry) {
+      const [id,p]=disconnectedEntry;
+      initDisconnectChoice(id, p.name||'A player');
+    } else {
+      const allConnected=Object.values(data).every(p=>p.connected);
+      if(allConnected) clearDisconnectInfo();
+    }
   });
+
+  // Watch the shared disconnect-resolution state (drives the alert UI for everyone)
+  const discRef=ref(_state.db,`rooms/${_state.roomCode}/disconnectInfo`);
+  onValue(discRef, snap=>renderDisconnectAlert(snap.val()));
 }
+
+// The first client to notice a peer has dropped stakes out the shared prompt.
+// Won't overwrite an existing decision already in progress for the same (or another) player.
+function initDisconnectChoice(id, name) {
+  if(!_state.db || !window._firebaseModules || !_state.roomCode) return;
+  const current=_state.disconnectInfo;
+  if(current && current.playerId) return; // a disconnect is already being handled
+  const { ref, set } = window._firebaseModules;
+  set(ref(_state.db,`rooms/${_state.roomCode}/disconnectInfo`), { playerId:id, playerName:name, status:'choice' }).catch(()=>{});
+}
+
+function clearDisconnectInfo() {
+  if(!_state.db || !window._firebaseModules || !_state.roomCode) return;
+  if(!_state.disconnectInfo) return;
+  const { ref, remove } = window._firebaseModules;
+  remove(ref(_state.db,`rooms/${_state.roomCode}/disconnectInfo`)).catch(()=>{});
+}
+
+function renderDisconnectAlert(info) {
+  _state.disconnectInfo = info;
+  const uid=_state.currentUser?.uid;
+
+  if(!info || info.playerId===uid) {
+    $('disconnect-alert').classList.remove('active');
+    $('disconnect-choice-buttons').style.display='none';
+    $('disconnect-waiting-note').style.display='none';
+    return;
+  }
+
+  $('disconnect-alert').classList.add('active');
+  if(info.status==='waiting') {
+    $('disconnect-msg').textContent=`Waiting for ${info.playerName} to reconnect...`;
+    $('disconnect-choice-buttons').style.display='none';
+    $('disconnect-waiting-note').style.display='flex';
+  } else {
+    $('disconnect-msg').textContent=`${info.playerName} has disconnected. Gameplay is frozen. What would you like to do?`;
+    $('disconnect-choice-buttons').style.display='flex';
+    $('disconnect-waiting-note').style.display='none';
+  }
+}
+
+function terminateGameFromDisconnect() {
+  if(!_state.db || !window._firebaseModules || !_state.roomCode) return;
+  const { ref, update, remove } = window._firebaseModules;
+  update(ref(_state.db), { [`rooms/${_state.roomCode}/phase`]: 'terminated' }).catch(()=>{});
+  remove(ref(_state.db,`rooms/${_state.roomCode}/disconnectInfo`)).catch(()=>{});
+}
+
+$('disconnect-wait-btn')?.addEventListener('click', ()=>{
+  if(!_state.db || !window._firebaseModules || !_state.roomCode) return;
+  const { ref, update } = window._firebaseModules;
+  update(ref(_state.db,`rooms/${_state.roomCode}/disconnectInfo`), { status:'waiting' }).catch(e=>showToast(e.message,'error'));
+});
+$('disconnect-terminate-btn')?.addEventListener('click', terminateGameFromDisconnect);
+$('disconnect-terminate-btn2')?.addEventListener('click', terminateGameFromDisconnect);
+
+// Called whenever my own connection comes back up — asks me if I want back in,
+// but only when the other players explicitly chose to wait for me.
+function checkReconnectPrompt() {
+  if(!_state.db || !window._firebaseModules || !_state.roomCode) return;
+  const uid=_state.currentUser?.uid;
+  const { ref, get } = window._firebaseModules;
+  get(ref(_state.db,`rooms/${_state.roomCode}/disconnectInfo`)).then(snap=>{
+    const info=snap.val();
+    if(info && info.playerId===uid && info.status==='waiting') {
+      showModal('reconnect-modal');
+    }
+  }).catch(()=>{});
+}
+
+$('reconnect-yes-btn')?.addEventListener('click', ()=>{
+  hideModal('reconnect-modal');
+  clearDisconnectInfo();
+  showToast('Welcome back! Resuming the game...', 'success');
+});
+$('reconnect-no-btn')?.addEventListener('click', ()=>{
+  hideModal('reconnect-modal');
+  terminateGameFromDisconnect();
+});
 
 function loadGameState(data) {
   if(!data) return;
@@ -3969,6 +4191,7 @@ function loadGameState(data) {
   _state.questResults  = data.questResults||[];
   _state.ladyEnabled   = data.ladyEnabled||false;
   _state.ladyHolder    = data.ladyHolder||0;
+  _state.ladyBroadcast = data.ladyBroadcast||null;
   _state.roles         = data.roles||{};
   const uid=_state.currentUser?.uid;
   _state.myRole        = _state.roles[uid];
@@ -3993,10 +4216,16 @@ function setupGameListeners() {
       Object.assign(_state.customAssets, data.assets);
     }
     renderTable(); renderQuestBoard(); renderBottomStrip(); setNavPhase(_state.phase);
+    handleLadyBroadcast(data.ladyBroadcast);
     if(data.phase!==prevPhase) {
       // Phase changed — react
       if(data.phase==='teamVote' && Object.keys(data.questVotes||{}).length===_state.players.length) {
         processVoteResults();
+      }
+      if(data.phase==='terminated') {
+        $('disconnect-alert').classList.remove('active');
+        hideModal('reconnect-modal');
+        endGame('terminated');
       }
     }
   });
