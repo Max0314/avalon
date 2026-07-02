@@ -547,6 +547,17 @@
       z-index: 20; display: none; -webkit-tap-highlight-color: transparent;
     }
     #role-peek-fab:active { transform: scale(0.93); }
+    /* Floating "Game Guide" Button */
+    #guide-fab {
+      position: absolute; top: 10px; right: 16px;
+      width: 52px; height: 52px; border-radius: 50%;
+      background: linear-gradient(135deg, #1e3a2a, #2d7a4f);
+      border: none; display: none; align-items: center; justify-content: center;
+      font-size: 22px; cursor: pointer;
+      box-shadow: 0 6px 20px rgba(45,122,79,0.5), 0 2px 6px rgba(0,0,0,0.4);
+      z-index: 20; -webkit-tap-highlight-color: transparent;
+    }
+    #guide-fab:active { transform: scale(0.93); }
 
     /* ── Card Flip ───────────────────────────────────────────── */
     .card-3d-wrap {
@@ -1087,30 +1098,9 @@
     }
     .asset-select option { background: #1e2535; }
 
-    /* ── Auth Sub-View Animation ────────────────────────────── */
-    .auth-view-panel {
-      /* Hidden state: slid down + faded */
-      opacity: 0;
-      transform: translateY(18px);
-      pointer-events: none;
-      transition: opacity 0.32s cubic-bezier(0.4,0,0.2,1),
-                  transform 0.32s cubic-bezier(0.4,0,0.2,1);
-      /* Keep in flow but invisible; JS toggles .auth-visible */
-      display: block !important;
-      position: absolute;
-      width: 100%;
-      left: 0;
-    }
-    .auth-view-panel.auth-visible {
-      opacity: 1;
-      transform: translateY(0);
-      pointer-events: all;
-      position: relative;
-    }
-    /* Wrapper that clips the animated panels */
+    /* ── Auth Choice View (login/create are now floating modals — see .modal-backdrop) ── */
     #auth-panels-wrap {
       position: relative;
-      min-height: 200px; /* prevents layout collapse during transition */
     }
 
     /* ── Code PIN field — hide digits like a password ───────── */
@@ -1369,7 +1359,7 @@
         <div id="auth-panels-wrap">
 
           <!-- ── Panel: Choice ─────────────────────────────────── -->
-          <div id="auth-choice-view" class="auth-view-panel auth-visible">
+          <div id="auth-choice-view">
             <div style="background:var(--bg-card);border:1px solid rgba(212,175,55,0.3);border-radius:16px;padding:22px;box-shadow:0 4px 24px rgba(0,0,0,0.4);">
               <p style="font-family:'Cinzel',serif;font-size:13px;color:var(--gold);margin-bottom:18px;text-align:center;letter-spacing:1.5px;">
                 ⚔️ WELCOME, TRAVELER
@@ -1384,53 +1374,53 @@
             <p id="auth-error" style="color:var(--red-evil-l);font-size:12px;text-align:center;margin-top:12px;display:none;"></p>
           </div>
 
-          <!-- ── Panel: Login ──────────────────────────────────── -->
-          <div id="auth-login-view" class="auth-view-panel">
-            <div style="background:var(--bg-card);border:1px solid rgba(212,175,55,0.3);border-radius:16px;padding:22px;box-shadow:0 4px 24px rgba(0,0,0,0.4);">
-              <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;">
-                <button class="auth-back-btn" data-target="login" style="background:none;border:none;cursor:pointer;padding:6px;margin:-6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;-webkit-tap-highlight-color:transparent;">
-                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
-                </button>
-                <p style="font-family:'Cinzel',serif;font-size:13px;color:var(--gold);text-align:center;letter-spacing:1px;flex:1;margin:0;">
-                  🗝️ USE EXISTING ACCOUNT
-                </p>
-                <span style="width:38px;flex-shrink:0;"></span>
-              </div>
-              <input id="login-username" class="input-field" type="text" maxlength="18" placeholder="Username" autocomplete="off" />
-              <input id="login-code" class="input-field pin-field" style="margin-top:10px;" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="new-password" />
-              <button id="login-enter-btn" class="btn-primary" style="margin-top:16px;">
-                Enter the Round Table
+        </div><!-- /auth-panels-wrap -->
+
+        <!-- ── Floating Modal: Login ────────────────────────────── -->
+        <div id="auth-login-view" class="modal-backdrop">
+          <div class="modal-box" style="max-width:340px;text-align:left;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;">
+              <button class="auth-back-btn" data-target="login" style="background:none;border:none;cursor:pointer;padding:6px;margin:-6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;-webkit-tap-highlight-color:transparent;">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
               </button>
+              <p style="font-family:'Cinzel',serif;font-size:13px;color:var(--gold);text-align:center;letter-spacing:1px;flex:1;margin:0;">
+                🗝️ USE EXISTING ACCOUNT
+              </p>
+              <span style="width:38px;flex-shrink:0;"></span>
             </div>
+            <input id="login-username" class="input-field" type="text" maxlength="18" placeholder="Username" autocomplete="off" />
+            <input id="login-code" class="input-field pin-field" style="margin-top:10px;" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="new-password" />
+            <button id="login-enter-btn" class="btn-primary" style="margin-top:16px;">
+              Enter the Round Table
+            </button>
             <p id="auth-error-login" style="color:var(--red-evil-l);font-size:12px;text-align:center;margin-top:12px;display:none;"></p>
           </div>
+        </div>
 
-          <!-- ── Panel: Create Account ─────────────────────────── -->
-          <div id="auth-create-view" class="auth-view-panel">
-            <div style="background:var(--bg-card);border:1px solid rgba(212,175,55,0.3);border-radius:16px;padding:22px;box-shadow:0 4px 24px rgba(0,0,0,0.4);">
-              <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;">
-                <button class="auth-back-btn" data-target="create" style="background:none;border:none;cursor:pointer;padding:6px;margin:-6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;-webkit-tap-highlight-color:transparent;">
-                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
-                </button>
-                <p style="font-family:'Cinzel',serif;font-size:13px;color:var(--gold);text-align:center;letter-spacing:1px;flex:1;margin:0;">
-                  ✨ CREATE YOUR ACCOUNT
-                </p>
-                <span style="width:38px;flex-shrink:0;"></span>
-              </div>
-              <input id="account-username" class="input-field" type="text" maxlength="18" placeholder="Username (e.g. KnightXV)" autocomplete="off" />
-              <input id="account-code" class="input-field pin-field" style="margin-top:10px;" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="new-password" />
-              <p style="font-family:'Cinzel',serif;font-size:12px;color:var(--gold);margin:16px 0 10px;text-align:center;letter-spacing:1px;">
-                🎭 CHOOSE YOUR HERO ICON
-              </p>
-              <div id="hero-icon-picker" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;"></div>
-              <button id="account-enter-btn" class="btn-primary" style="margin-top:16px;">
-                Enter the Round Table
+        <!-- ── Floating Modal: Create Account ───────────────────── -->
+        <div id="auth-create-view" class="modal-backdrop">
+          <div class="modal-box" style="max-width:340px;text-align:left;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;">
+              <button class="auth-back-btn" data-target="create" style="background:none;border:none;cursor:pointer;padding:6px;margin:-6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;-webkit-tap-highlight-color:transparent;">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
               </button>
+              <p style="font-family:'Cinzel',serif;font-size:13px;color:var(--gold);text-align:center;letter-spacing:1px;flex:1;margin:0;">
+                ✨ CREATE YOUR ACCOUNT
+              </p>
+              <span style="width:38px;flex-shrink:0;"></span>
             </div>
+            <input id="account-username" class="input-field" type="text" maxlength="18" placeholder="Username (e.g. KnightXV)" autocomplete="off" />
+            <input id="account-code" class="input-field pin-field" style="margin-top:10px;" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="new-password" />
+            <p style="font-family:'Cinzel',serif;font-size:12px;color:var(--gold);margin:16px 0 10px;text-align:center;letter-spacing:1px;">
+              🎭 CHOOSE YOUR HERO ICON
+            </p>
+            <div id="hero-icon-picker" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;"></div>
+            <button id="account-enter-btn" class="btn-primary" style="margin-top:16px;">
+              Enter the Round Table
+            </button>
             <p id="auth-error-create" style="color:var(--red-evil-l);font-size:12px;text-align:center;margin-top:12px;display:none;"></p>
           </div>
-
-        </div><!-- /auth-panels-wrap -->
+        </div>
       </div>
 
       <!-- Lore footer -->
@@ -1531,6 +1521,8 @@
         <button id="role-peek-fab" title="View My Role">🎭</button>
         <!-- History FAB -->
         <button id="history-fab" title="Match History">📜</button>
+        <!-- Game Guide FAB -->
+        <button id="guide-fab" title="Game Guide">📖</button>
       </div>
 
       <!-- Bottom Action Strip -->
@@ -1730,7 +1722,8 @@
   <div class="modal-box" style="text-align:center;">
     <h3 class="modal-title">💧 Lady of the Lake</h3>
     <p style="font-size:11px;color:var(--parchment-dim);margin-bottom:12px;">You hold the Lady token. Choose a player to inspect their alignment.</p>
-    <div id="lady-target-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px;max-height:40vh;overflow-y:auto;"></div>
+    <div id="lady-target-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;max-height:35vh;overflow-y:auto;"></div>
+    <button id="lady-confirm-btn" class="btn-primary btn-small" style="display:none;margin-bottom:10px;">✅ Confirm Inspection</button>
     <div id="lady-result-box" style="display:none;padding:14px;border-radius:10px;margin-bottom:14px;border:1px solid var(--gold-dim);">
       <p style="font-size:12px;color:var(--parchment-dim);">The Lady whispers...</p>
       <p id="lady-result-text" style="font-size:16px;font-family:'Cinzel',serif;margin-top:6px;"></p>
@@ -1878,6 +1871,123 @@
 <div id="confetti-overlay"></div>
 
 <!-- ═══════════════════════════════════════════════════════════════
+     MODAL: Game Guide (Icons + Roles)
+═══════════════════════════════════════════════════════════════ -->
+<div id="guide-modal" class="modal-backdrop">
+  <div class="modal-box" style="max-height:88dvh;overflow-y:auto;text-align:left;">
+    <h3 class="modal-title" style="margin-bottom:8px;">📖 Game Guide</h3>
+    <p style="font-size:10px;color:var(--parchment-dim);text-align:center;margin-bottom:16px;font-family:'Cinzel',serif;letter-spacing:1px;">ICONS · ROLES · MECHANICS</p>
+
+    <!-- Icons Section -->
+    <div style="background:rgba(255,255,255,0.03);border:1px solid var(--gold-dim);border-radius:10px;padding:12px;margin-bottom:12px;">
+      <p style="font-family:'Cinzel',serif;font-size:11px;color:var(--gold);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px;">🔣 Game Icons</p>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div style="display:flex;align-items:flex-start;gap:10px;">
+          <span style="font-size:20px;width:28px;flex-shrink:0;text-align:center;">👑</span>
+          <div><p style="font-size:12px;color:var(--parchment);font-weight:600;margin-bottom:2px;">Leader Crown</p><p style="font-size:11px;color:var(--parchment-dim);line-height:1.4;">This player is the current round leader. They nominate a team to go on the quest.</p></div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:10px;">
+          <span style="font-size:20px;width:28px;flex-shrink:0;text-align:center;">💧</span>
+          <div><p style="font-size:12px;color:var(--parchment);font-weight:600;margin-bottom:2px;">Lady of the Lake</p><p style="font-size:11px;color:var(--parchment-dim);line-height:1.4;">This player holds the Lady token and may secretly inspect another player's alignment (Good or Evil) after each quest.</p></div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:10px;">
+          <span style="font-size:20px;width:28px;flex-shrink:0;text-align:center;">🛡️</span>
+          <div><p style="font-size:12px;color:var(--parchment);font-weight:600;margin-bottom:2px;">Quest Shield</p><p style="font-size:11px;color:var(--parchment-dim);line-height:1.4;">This player has been nominated for the current quest team.</p></div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:10px;">
+          <span style="font-size:20px;width:28px;flex-shrink:0;text-align:center;">✅</span>
+          <div><p style="font-size:12px;color:var(--parchment);font-weight:600;margin-bottom:2px;">Quest Success Card</p><p style="font-size:11px;color:var(--parchment-dim);line-height:1.4;">Played secretly during a quest. Good players must always play Success.</p></div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:10px;">
+          <span style="font-size:20px;width:28px;flex-shrink:0;text-align:center;">💀</span>
+          <div><p style="font-size:12px;color:var(--parchment);font-weight:600;margin-bottom:2px;">Sabotage / Fail Card</p><p style="font-size:11px;color:var(--parchment-dim);line-height:1.4;">Only Evil players can play this. One Fail card (usually) is enough to fail a quest.</p></div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:10px;">
+          <span style="font-size:20px;width:28px;flex-shrink:0;text-align:center;">🔵</span>
+          <div><p style="font-size:12px;color:var(--parchment);font-weight:600;margin-bottom:2px;">Blue Aura / Good Alignment</p><p style="font-size:11px;color:var(--parchment-dim);line-height:1.4;">Your seat glows blue — visible only to you — indicating you are on the side of Good.</p></div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:10px;">
+          <span style="font-size:20px;width:28px;flex-shrink:0;text-align:center;">🔴</span>
+          <div><p style="font-size:12px;color:var(--parchment);font-weight:600;margin-bottom:2px;">Red Aura / Evil Alignment</p><p style="font-size:11px;color:var(--parchment-dim);line-height:1.4;">Your seat glows red — visible only to you — indicating you serve the forces of Evil.</p></div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:10px;">
+          <span style="font-size:20px;width:28px;flex-shrink:0;text-align:center;">⚔️</span>
+          <div><p style="font-size:12px;color:var(--parchment);font-weight:600;margin-bottom:2px;">Current Quest Slot</p><p style="font-size:11px;color:var(--parchment-dim);line-height:1.4;">On the central board, the crossed swords mark the active quest round.</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Roles Section -->
+    <div style="background:rgba(255,255,255,0.03);border:1px solid var(--gold-dim);border-radius:10px;padding:12px;margin-bottom:12px;">
+      <p style="font-family:'Cinzel',serif;font-size:11px;color:var(--gold);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px;">🎭 Roles</p>
+
+      <!-- Good Roles -->
+      <p style="font-size:10px;color:var(--blue-good-l);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;font-family:'Cinzel',serif;">⚔️ Good Roles</p>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px;">
+        <div style="padding:10px;background:rgba(42,74,140,0.12);border:1px solid rgba(74,127,212,0.3);border-radius:8px;">
+          <p style="font-size:12px;color:var(--parchment);font-weight:700;margin-bottom:4px;">🧙 Merlin</p>
+          <p style="font-size:11px;color:var(--parchment-dim);line-height:1.5;">Knows all Evil players (except Mordred) from the start. Must guide Good to victory while hiding this knowledge — or the Assassin will strike at game end.</p>
+        </div>
+        <div style="padding:10px;background:rgba(42,74,140,0.12);border:1px solid rgba(74,127,212,0.3);border-radius:8px;">
+          <p style="font-size:12px;color:var(--parchment);font-weight:700;margin-bottom:4px;">🛡️ Percival</p>
+          <p style="font-size:11px;color:var(--parchment-dim);line-height:1.5;">Sees who claims to be Merlin — but Morgana also appears as Merlin to Percival. Must figure out which is the true Merlin and protect them.</p>
+        </div>
+        <div style="padding:10px;background:rgba(42,74,140,0.12);border:1px solid rgba(74,127,212,0.3);border-radius:8px;">
+          <p style="font-size:12px;color:var(--parchment);font-weight:700;margin-bottom:4px;">⚔️ Loyal Servant</p>
+          <p style="font-size:11px;color:var(--parchment-dim);line-height:1.5;">No special powers. Use logic, voting patterns, and social deduction to identify and expose Evil players.</p>
+        </div>
+      </div>
+
+      <!-- Evil Roles -->
+      <p style="font-size:10px;color:var(--red-evil-l);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;font-family:'Cinzel',serif;">🩸 Evil Roles</p>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <div style="padding:10px;background:rgba(140,26,26,0.12);border:1px solid rgba(212,48,48,0.3);border-radius:8px;">
+          <p style="font-size:12px;color:var(--parchment);font-weight:700;margin-bottom:4px;">🗡️ Assassin</p>
+          <p style="font-size:11px;color:var(--parchment-dim);line-height:1.5;">Knows all Evil allies. If Good wins 3 quests, the Assassin gets one final chance to name Merlin — correctly assassinating Merlin gives Evil the win.</p>
+        </div>
+        <div style="padding:10px;background:rgba(140,26,26,0.12);border:1px solid rgba(212,48,48,0.3);border-radius:8px;">
+          <p style="font-size:12px;color:var(--parchment);font-weight:700;margin-bottom:4px;">🌙 Morgana</p>
+          <p style="font-size:11px;color:var(--parchment-dim);line-height:1.5;">Appears as Merlin to Percival, creating confusion about who the real Merlin is. Known to the other Evil players.</p>
+        </div>
+        <div style="padding:10px;background:rgba(140,26,26,0.12);border:1px solid rgba(212,48,48,0.3);border-radius:8px;">
+          <p style="font-size:12px;color:var(--parchment);font-weight:700;margin-bottom:4px;">💀 Mordred</p>
+          <p style="font-size:11px;color:var(--parchment-dim);line-height:1.5;">The most dangerous evil. Knows their allies, but Merlin cannot see Mordred — making them invisible to Good's greatest spy.</p>
+        </div>
+        <div style="padding:10px;background:rgba(140,26,26,0.12);border:1px solid rgba(212,48,48,0.3);border-radius:8px;">
+          <p style="font-size:12px;color:var(--parchment);font-weight:700;margin-bottom:4px;">👁️ Oberon</p>
+          <p style="font-size:11px;color:var(--parchment-dim);line-height:1.5;">Does not know their Evil allies, and those allies do not know Oberon. Acts alone — a wildcard for both sides.</p>
+        </div>
+        <div style="padding:10px;background:rgba(140,26,26,0.12);border:1px solid rgba(212,48,48,0.3);border-radius:8px;">
+          <p style="font-size:12px;color:var(--parchment);font-weight:700;margin-bottom:4px;">🩸 Minion of Mordred</p>
+          <p style="font-size:11px;color:var(--parchment-dim);line-height:1.5;">No special powers beyond knowing their Evil allies. Sabotage quests and blend in.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- How to Win -->
+    <div style="background:rgba(255,255,255,0.03);border:1px solid var(--gold-dim);border-radius:10px;padding:12px;margin-bottom:12px;">
+      <p style="font-family:'Cinzel',serif;font-size:11px;color:var(--gold);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px;">🏆 How to Win</p>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div style="padding:8px 10px;background:rgba(34,197,94,0.08);border-left:3px solid var(--success-green);border-radius:4px;">
+          <p style="font-size:11px;color:var(--success-green);font-weight:700;margin-bottom:3px;">✅ Good Wins If…</p>
+          <p style="font-size:11px;color:var(--parchment-dim);line-height:1.4;">3 out of 5 quests Succeed — and the Assassin fails to identify Merlin.</p>
+        </div>
+        <div style="padding:8px 10px;background:rgba(239,68,68,0.08);border-left:3px solid var(--fail-red);border-radius:4px;">
+          <p style="font-size:11px;color:var(--fail-red);font-weight:700;margin-bottom:3px;">💀 Evil Wins If…</p>
+          <p style="font-size:11px;color:var(--parchment-dim);line-height:1.4;">3 out of 5 quests Fail — OR the vote track reaches 5 consecutive rejections — OR the Assassin correctly names Merlin after Good wins.</p>
+        </div>
+        <div style="padding:8px 10px;background:rgba(245,158,11,0.08);border-left:3px solid var(--amber);border-radius:4px;">
+          <p style="font-size:11px;color:var(--amber);font-weight:700;margin-bottom:3px;">⚖️ Vote Track</p>
+          <p style="font-size:11px;color:var(--parchment-dim);line-height:1.4;">The 5 dots on the central board track failed team votes. If 5 teams are rejected in a row, Evil wins immediately.</p>
+        </div>
+      </div>
+    </div>
+
+    <button onclick="hideModal('guide-modal')" class="btn-primary btn-small" style="width:100%;">Close Guide</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
      JAVASCRIPT ENGINE
 ═══════════════════════════════════════════════════════════════ -->
 <script>
@@ -1951,7 +2061,7 @@ const ADMIN_CODE     = "0597";
    === BEGIN DEMO SANDBOX ZONE ===
    DEMO MODE FLAG — set false for production
 ════════════════════════════════════════════════════════════════ */
-const DEMO_MODE_ACTIVE = true;
+const DEMO_MODE_ACTIVE = false;
 /* === END DEMO SANDBOX ZONE === */
 
 /* ════════════════════════════════════════════════════════════════
@@ -1997,6 +2107,7 @@ let _state = {
   db:               null,
   auth:             null,
   unsubscribers:    [],
+  gameListenerActive: false, // guard against duplicate Firebase subscriptions
   customAssets:     {},       // {assetKey: base64url}
 };
 
@@ -2234,38 +2345,15 @@ function setLoading(btn, loading, label='') {
 
 /* ── Auth Sub-View Switching ──────────────────────────────────── */
 function showAuthView(view) {
-  const panels = {
-    choice: $('auth-choice-view'),
-    login:  $('auth-login-view'),
-    create: $('auth-create-view'),
-  };
-
-  // Determine direction: forward (choice→login/create) or back (login/create→choice)
-  const isForward = view !== 'choice';
-
-  Object.entries(panels).forEach(([key, el]) => {
-    if (!el) return;
-    if (key === view) {
-      // Incoming panel: set start position then animate in
-      el.style.transform = isForward ? 'translateX(40px)' : 'translateX(-40px)';
-      el.style.opacity = '0';
-      // Force reflow so transition fires
-      void el.offsetWidth;
-      el.classList.add('auth-visible');
-      el.style.transform = '';
-      el.style.opacity = '';
-    } else {
-      el.classList.remove('auth-visible');
-    }
-  });
-
-  // Sync wrapper min-height to active panel after transition
-  const wrap = $('auth-panels-wrap');
-  if (wrap) {
-    setTimeout(() => {
-      const active = panels[view];
-      if (active) wrap.style.minHeight = active.offsetHeight + 'px';
-    }, 340);
+  if (view === 'login') {
+    hideModal('auth-create-view');
+    showModal('auth-login-view');
+  } else if (view === 'create') {
+    hideModal('auth-login-view');
+    showModal('auth-create-view');
+  } else {
+    hideModal('auth-login-view');
+    hideModal('auth-create-view');
   }
 
   // Clear stale errors
@@ -2319,8 +2407,9 @@ function clearAccountFromDevice() {
 
 /* ── Account: Log in to an existing account (or admin) ────────── */
 async function performAccountLogin(username, code) {
+  username = username.toLowerCase(); // normalize — match how accounts are stored
   // Special-cased admin login — not stored as a normal account.
-  if(username === ADMIN_USERNAME) {
+  if(username === ADMIN_USERNAME.toLowerCase()) {
     if(code !== ADMIN_CODE) throw new Error('Incorrect code');
     _state.currentUser = { uid:'admin_'+ADMIN_USERNAME, displayName:ADMIN_USERNAME, isAnonymous:false };
     _state.isAdmin   = true;
@@ -2351,7 +2440,8 @@ async function performAccountLogin(username, code) {
 
 /* ── Account: Create a brand-new account ──────────────────────── */
 async function performAccountCreate(username, code, chosenIcon) {
-  if(username === ADMIN_USERNAME) throw new Error('That username is reserved');
+  username = username.toLowerCase(); // normalize — prevents case-variant duplicates
+  if(username === ADMIN_USERNAME.toLowerCase()) throw new Error('That username is reserved');
 
   if(DEMO_MODE_ACTIVE || !_state.db || !window._firebaseModules) {
     // Fallback (no Firebase) — treat as local-only account
@@ -2379,7 +2469,7 @@ async function performAccountCreate(username, code, chosenIcon) {
 
 /* ── Login form handler ───────────────────────────────────────── */
 $('login-enter-btn').addEventListener('click', async () => {
-  const username = $('login-username').value.trim();
+  const username = $('login-username').value.trim().toLowerCase();
   const code     = $('login-code').value.trim();
   const errEl    = $('auth-error-login');
   errEl.style.display='none';
@@ -2405,7 +2495,7 @@ $('login-username').addEventListener('keydown', e => { if(e.key==='Enter') $('lo
 
 /* ── Create form handler ──────────────────────────────────────── */
 $('account-enter-btn').addEventListener('click', async () => {
-  const username = $('account-username').value.trim();
+  const username = $('account-username').value.trim().toLowerCase();
   const code     = $('account-code').value.trim();
   const errEl    = $('auth-error-create');
   errEl.style.display='none';
@@ -2733,30 +2823,20 @@ $('start-game-btn')?.addEventListener('click', startGame);
 function buildRoleSet(n) {
   const evilN  = GAME_TEXT_CONFIG.evilCount[n]||2;
   const goodN  = n - evilN;
-  let goodPool = shuffle(["merlin","percival","good_generic","good_generic_alt","good_generic","good_generic_alt"]);
-  // Always include merlin
-  const goodRoles = ["merlin", ...goodPool.filter(r=>r!=='merlin').slice(0, goodN-1)];
 
-  // Evil side always starts with Assassin. Special evil roles (Morgana/Mordred/Oberon)
-  // are filled in next, at random. "Minion of Mordred" (the generic evil filler role)
-  // is only ever used once BOTH Assassin and Morgana are already in the game — for a
-  // 5-player game (2 evil slots: Assassin + 1 more) that means it can never appear,
-  // since there's no room left for a 3rd evil role after Assassin + Morgana.
-  let evilSpecialPool = shuffle(["morgana","mordred","oberon"]);
-  let genericPool     = shuffle(["evil_generic","evil_generic_alt","evil_generic","evil_generic_alt"]);
-  const evilRoles = ["assassin"];
+  // Always include Merlin + Percival; fill remaining good slots from generic pool
+  const goodGenerics = shuffle(["good_generic","good_generic_alt","good_generic","good_generic_alt"]);
+  const goodRoles = ["merlin", "percival", ...goodGenerics].slice(0, goodN);
+
+  // Always include Assassin + Morgana; fill remaining evil slots from specials (Mordred/Oberon) then generics
+  const evilSpecialPool = shuffle(["mordred","oberon"]);
+  const genericPool     = shuffle(["evil_generic","evil_generic_alt","evil_generic","evil_generic_alt"]);
+  const evilRoles = ["assassin", "morgana"];
 
   while(evilRoles.length < evilN) {
-    const hasMorgana = evilRoles.includes('morgana');
     if(evilSpecialPool.length>0) {
-      // Prefer filling remaining special roles before ever touching the generic pool
       evilRoles.push(evilSpecialPool.shift());
-    } else if(hasMorgana) {
-      // Only allowed to use "Minion of Mordred" once Morgana (and Assassin) are in
-      evilRoles.push(genericPool.shift());
     } else {
-      // Out of specials and Morgana isn't in — fall back to a generic slot rather
-      // than stall (extremely rare edge case for very small evil counts).
       evilRoles.push(genericPool.shift());
     }
   }
@@ -2923,10 +3003,9 @@ function showRolePeekModal() {
       <div class="card-back">
         <div class="card-back-pattern">⚔️</div>
       </div>
-      <div class="card-face">
-        <img src="${roleDef.img||''}" onerror="this.style.display='none'" style="width:80px;height:80px;object-fit:contain;border-radius:8px;" />
-        <div class="role-name">${roleDef.name||'???'}</div>
-        <div class="role-align ${isGood?'good':'evil'}">${isGood?'✦ Good Alignment ✦':'✦ Evil Alignment ✦'}</div>
+      <div class="card-face" style="padding:0;overflow:hidden;position:relative;">
+        <img src="${roleDef.img||''}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover;display:block;" />
+        <div class="role-align ${isGood?'good':'evil'}" style="position:absolute;bottom:0;left:0;right:0;padding:6px 4px;background:rgba(0,0,0,0.75);font-size:9px;text-align:center;letter-spacing:0.5px;">${isGood?'✦ Good Alignment ✦':'✦ Evil Alignment ✦'}</div>
       </div>
     </div>`;
   wrap.appendChild(cardWrap);
@@ -2998,6 +3077,9 @@ function renderBottomStrip() {
 
   const roleFab = $('role-peek-fab');
   if(roleFab) roleFab.style.display = (_state.myRole && _state.phase!=='roleReveal' && _state.phase!=='end') ? 'flex' : 'none';
+
+  const guideFab = $('guide-fab');
+  if(guideFab) guideFab.style.display = (_state.phase!=='roleReveal' && _state.phase!=='end') ? 'flex' : 'none';
 
   const me      = _state.players[_state.myIndex];
   const isLeader= _state.myIndex === _state.currentLeader;
@@ -3423,7 +3505,9 @@ function showLadyModal() {
   list.innerHTML='';
   $('lady-result-box').style.display='none';
   $('lady-close-btn').style.display='none';
+  $('lady-confirm-btn').style.display='none';
   let selected=null;
+  let confirmed=false;
 
   _state.players.forEach((p,i)=>{
     if(i===_state.ladyHolder) return; // Can't inspect yourself
@@ -3431,23 +3515,43 @@ function showLadyModal() {
     row.className='assassin-pick-row';
     row.innerHTML=`<div class="roster-avatar">${p.emoji}</div><span style="font-size:13px;color:var(--parchment);">${p.name}</span>`;
     row.addEventListener('click',()=>{
+      if(confirmed) return; // Locked after confirming
       document.querySelectorAll('#lady-target-list .assassin-pick-row').forEach(r=>r.classList.remove('selected'));
       row.classList.add('selected');
       selected=i;
-      // Reveal alignment
-      const rk=_state.roles[p.id];
-      const iG=isGoodRole(rk);
-      $('lady-result-box').style.display='block';
-      $('lady-result-box').style.background=iG?'rgba(42,74,140,0.2)':'rgba(140,26,26,0.2)';
-      $('lady-result-text').textContent=iG?'⚔️ This knight serves the Good!':'🩸 This player serves Evil!';
-      $('lady-result-text').style.color=iG?'var(--blue-good-l)':'var(--red-evil-l)';
-      $('lady-close-btn').style.display='block';
+      // Show confirm button — don't reveal yet
+      $('lady-confirm-btn').style.display='block';
+      $('lady-result-box').style.display='none';
+      $('lady-close-btn').style.display='none';
     });
     list.appendChild(row);
   });
+
+  $('lady-confirm-btn').onclick=()=>{
+    if(selected===null || confirmed) return;
+    confirmed=true;
+    // Lock the list so the choice can't be changed
+    document.querySelectorAll('#lady-target-list .assassin-pick-row').forEach(r=>{
+      r.style.pointerEvents='none';
+      r.style.opacity='0.45';
+    });
+    const selRow=document.querySelector('#lady-target-list .assassin-pick-row.selected');
+    if(selRow) selRow.style.opacity='1';
+    $('lady-confirm-btn').style.display='none';
+    // Now reveal the alignment
+    const p=_state.players[selected];
+    const rk=_state.roles[p.id];
+    const iG=isGoodRole(rk);
+    $('lady-result-box').style.display='block';
+    $('lady-result-box').style.background=iG?'rgba(42,74,140,0.2)':'rgba(140,26,26,0.2)';
+    $('lady-result-text').textContent=iG?'⚔️ This knight serves the Good!':'🩸 This player serves Evil!';
+    $('lady-result-text').style.color=iG?'var(--blue-good-l)':'var(--red-evil-l)';
+    $('lady-close-btn').style.display='block';
+  };
+
   showModal('lady-modal');
   $('lady-close-btn').onclick=()=>{
-    if(selected!==null) {
+    if(selected!==null && confirmed) {
       hideModal('lady-modal');
       broadcastLadyChoice(_state.ladyHolder, selected);
     }
@@ -3460,20 +3564,32 @@ function broadcastLadyChoice(fromIdx, toIdx) {
   const fromP=_state.players[fromIdx], toP=_state.players[toIdx];
   const uid=_state.currentUser?.uid;
   if(!fromP || !toP) return;
-  const payload={ fromIdx, toIdx, fromName:fromP.name, toName:toP.name, ack:{ [uid]:true } };
 
   if(!_state.db || !window._firebaseModules) {
-    // No live room to broadcast to — pass the token immediately.
-    _state.ladyHolder=toIdx;
-    _state.phase='nominate';
-    renderTable(); renderQuestBoard(); renderBottomStrip(); setNavPhase('Nomination');
+    // Demo mode: show the broadcast modal so all players (one device) can acknowledge.
+    $('lady-broadcast-text').textContent=`${fromP.name} has inspected ${toP.name}'s loyalty.`;
+    $('lady-broadcast-count').textContent='Tap below to acknowledge and continue.';
+    $('lady-broadcast-btn').style.display='block';
+    $('lady-broadcast-waiting').style.display='none';
+    showModal('lady-broadcast-modal');
+    // Override the button for demo mode — one click advances the game
+    $('lady-broadcast-btn').onclick=()=>{
+      $('lady-broadcast-btn').onclick=null; // clear override
+      hideModal('lady-broadcast-modal');
+      _state.ladyHolder=toIdx;
+      _state.phase='nominate';
+      renderTable(); renderQuestBoard(); renderBottomStrip(); setNavPhase('Nomination');
+    };
     return;
   }
+
+  // Live mode: write to Firebase; all clients receive via handleLadyBroadcast
+  const payload={ fromIdx, toIdx, fromName:fromP.name, toName:toP.name, ack:{ [uid]:true } };
   const { ref, update } = window._firebaseModules;
   update(ref(_state.db), { [`rooms/${_state.roomCode}/ladyBroadcast`]: payload }).catch(e=>showToast(e.message,'error'));
 }
 
-// Renders the "X chooses Y to show his/her Loyalty" prompt to every player,
+// Renders the "X inspected Y's Loyalty" prompt to every player,
 // tracks read receipts, and finalizes the token pass once everyone has read it.
 function handleLadyBroadcast(broadcast) {
   if(!broadcast) { hideModal('lady-broadcast-modal'); return; }
@@ -3483,10 +3599,17 @@ function handleLadyBroadcast(broadcast) {
   const n=_state.players.length || 1;
   const alreadyRead=!!ack[uid];
 
-  $('lady-broadcast-text').textContent=`${broadcast.fromName} chooses ${broadcast.toName} to show his/her Loyalty.`;
-  $('lady-broadcast-count').textContent=`${Math.min(ackCount,n)}/${n} players have read`;
+  $('lady-broadcast-text').textContent=`${broadcast.fromName} has inspected ${broadcast.toName}'s loyalty.`;
+  $('lady-broadcast-count').textContent=`${Math.min(ackCount,n)} / ${n} players acknowledged`;
   $('lady-broadcast-btn').style.display=alreadyRead?'none':'block';
   $('lady-broadcast-waiting').style.display=alreadyRead?'block':'none';
+
+  // Ensure the live-mode button has the correct onclick (not the demo override)
+  if(!$('lady-broadcast-btn')._liveWired) {
+    $('lady-broadcast-btn')._liveWired = true;
+    $('lady-broadcast-btn').onclick = null; // clear any demo override
+  }
+
   showModal('lady-broadcast-modal');
 
   if(ackCount>=n) {
@@ -3503,6 +3626,9 @@ function handleLadyBroadcast(broadcast) {
 }
 
 $('lady-broadcast-btn')?.addEventListener('click', ()=>{
+  // Demo mode: onclick is set as a property override — let that fire instead.
+  if($('lady-broadcast-btn').onclick) return;
+  // Live mode: write our ack to Firebase
   const uid=_state.currentUser?.uid;
   if(!uid || !_state.db || !window._firebaseModules || !_state.roomCode) return;
   const { ref, update } = window._firebaseModules;
@@ -3552,6 +3678,7 @@ function showAssassinModal() {
 ════════════════════════════════════════════════════════════════ */
 function endGame(result) {
   _state.phase='end';
+  _state.gameListenerActive = false; // allow re-registration in the next game session
   const overlay=$('endgame-overlay');
   const icon=$('endgame-icon');
   const title=$('endgame-title');
@@ -3899,6 +4026,7 @@ $('sidebar-admin-btn')?.addEventListener('click',()=>{
    HISTORY BOTTOM SHEET
 ════════════════════════════════════════════════════════════════ */
 $('history-fab')?.addEventListener('click',openHistorySheet);
+$('guide-fab')?.addEventListener('click',()=>showModal('guide-modal'));
 $('role-peek-fab')?.addEventListener('click',()=>{
   if(!_state.myRole) { showToast('No role assigned yet','error'); return; }
   showRolePeekModal();
@@ -4179,7 +4307,7 @@ $('reconnect-no-btn')?.addEventListener('click', ()=>{
   terminateGameFromDisconnect();
 });
 
-function loadGameState(data) {
+function loadGameState(data, fromListener=false) {
   if(!data) return;
   _state.phase         = data.phase||'nominate';
   _state.questIndex    = data.questIndex||0;
@@ -4196,7 +4324,9 @@ function loadGameState(data) {
   const uid=_state.currentUser?.uid;
   _state.myRole        = _state.roles[uid];
   _state.myIndex       = _state.players.findIndex(p=>p.id===uid)||0;
-  enterGameScreen();
+  // When called from the Firebase listener we skip re-mounting the screen
+  // to avoid recursive subscription registration and UI flicker.
+  if(!fromListener) enterGameScreen();
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -4205,13 +4335,18 @@ function loadGameState(data) {
 function setupGameListeners() {
   if(DEMO_MODE_ACTIVE) return;
   if(!_state.db || !window._firebaseModules) return;
+  // Guard: prevent duplicate Firebase subscriptions when loadGameState
+  // triggers enterGameScreen() which would call this function again.
+  if(_state.gameListenerActive) return;
+  _state.gameListenerActive = true;
+
   const { ref, onValue } = window._firebaseModules;
   const rRef=ref(_state.db,`rooms/${_state.roomCode}`);
   const unsub=onValue(rRef, snap=>{
     const data=snap.val();
     if(!data) return;
     const prevPhase=_state.phase;
-    loadGameState(data);
+    loadGameState(data, true); // fromListener=true: skip re-mounting screen
     if(data.assets) {
       Object.assign(_state.customAssets, data.assets);
     }
