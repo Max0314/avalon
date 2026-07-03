@@ -2061,7 +2061,7 @@ const ADMIN_CODE     = "0597";
    === BEGIN DEMO SANDBOX ZONE ===
    DEMO MODE FLAG — set false for production
 ════════════════════════════════════════════════════════════════ */
-const DEMO_MODE_ACTIVE = false;
+const DEMO_MODE_ACTIVE = localStorage.getItem('avalon_sandbox') === '1';
 /* === END DEMO SANDBOX ZONE === */
 
 /* ════════════════════════════════════════════════════════════════
@@ -4094,8 +4094,11 @@ function showAdminPanel() {
 $('admin-close')?.addEventListener('click',()=>hideModal('admin-modal'));
 
 $('admin-demo-toggle')?.addEventListener('click',function(){
+  const turningOn = !this.classList.contains('on');
   this.classList.toggle('on');
-  showToast('Demo mode change requires page restart', 'info');
+  localStorage.setItem('avalon_sandbox', turningOn ? '1' : '0');
+  showToast(`Sandbox ${turningOn ? 'ON' : 'OFF'} — reloading…`, 'info');
+  setTimeout(() => location.reload(), 1000);
 });
 
 $('admin-lady-toggle')?.addEventListener('click',function(){
