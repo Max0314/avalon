@@ -2992,6 +2992,8 @@ function showRolePeekModal() {
   const roleKey  = _state.myRole;
   const roleDef  = GAME_TEXT_CONFIG.roles[roleKey]||{};
   const isGood   = isGoodRole(roleKey);
+  // Prefer admin-uploaded asset, fall back to ./cards/ static file
+  const imgSrc   = _state.customAssets[roleKey] || roleDef.img || '';
 
   // Build card
   const wrap = $('role-peek-card-wrap');
@@ -3004,7 +3006,7 @@ function showRolePeekModal() {
         <div class="card-back-pattern">⚔️</div>
       </div>
       <div class="card-face" style="padding:0;overflow:hidden;position:relative;">
-        <img src="${roleDef.img||''}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover;display:block;" />
+        <img src="${imgSrc}" onerror="this.style.display='none'" style="width:100%;height:100%;object-fit:cover;display:block;" />
         <div class="role-align ${isGood?'good':'evil'}" style="position:absolute;bottom:0;left:0;right:0;padding:6px 4px;background:rgba(0,0,0,0.75);font-size:9px;text-align:center;letter-spacing:0.5px;">${isGood?'✦ Good Alignment ✦':'✦ Evil Alignment ✦'}</div>
       </div>
     </div>`;
@@ -4141,13 +4143,19 @@ $('admin-drop-lobby')?.addEventListener('click',()=>{
 });
 
 $('admin-terminate')?.addEventListener('click',()=>{
-  if(!DEMO_MODE_ACTIVE && _state.db && window._firebaseModules) {
-    const { ref, remove } = window._firebaseModules;
-    remove(ref(_state.db, `rooms/${_state.roomCode}`));
-  }
   hideModal('admin-modal');
+  if(!DEMO_MODE_ACTIVE && _state.db && window._firebaseModules && _state.roomCode) {
+    const { ref, update, remove } = window._firebaseModules;
+    // Step 1: broadcast 'terminated' so all clients react (endGame) before data is gone
+    update(ref(_state.db), { [`rooms/${_state.roomCode}/phase`]: 'terminated' })
+      .then(() => {
+        // Step 2: after clients have had time to read the signal, purge the room entirely
+        setTimeout(() => remove(ref(_state.db, `rooms/${_state.roomCode}`)).catch(()=>{}), 2000);
+      })
+      .catch(()=>{});
+  }
   showScreen('screen-auth'); setNavPhase('Lobby');
-  showToast('Room terminated','error');
+  showToast('Room terminated', 'error');
 });
 
 function renderConnectionTree() {
@@ -4274,7 +4282,10 @@ function renderDisconnectAlert(info) {
 function terminateGameFromDisconnect() {
   if(!_state.db || !window._firebaseModules || !_state.roomCode) return;
   const { ref, update, remove } = window._firebaseModules;
-  update(ref(_state.db), { [`rooms/${_state.roomCode}/phase`]: 'terminated' }).catch(()=>{});
+  // Broadcast terminated phase first so all clients react, then purge the room
+  update(ref(_state.db), { [`rooms/${_state.roomCode}/phase`]: 'terminated' })
+    .then(() => setTimeout(() => remove(ref(_state.db, `rooms/${_state.roomCode}`)).catch(()=>{}), 2000))
+    .catch(()=>{});
   remove(ref(_state.db,`rooms/${_state.roomCode}/disconnectInfo`)).catch(()=>{});
 }
 
@@ -4347,7 +4358,11 @@ function setupGameListeners() {
   const rRef=ref(_state.db,`rooms/${_state.roomCode}`);
   const unsub=onValue(rRef, snap=>{
     const data=snap.val();
-    if(!data) return;
+    if(!data) {
+      // Room was deleted from Firebase (admin wiped it) — treat as terminated
+      endGame('terminated');
+      return;
+    }
     const prevPhase=_state.phase;
     loadGameState(data, true); // fromListener=true: skip re-mounting screen
     if(data.assets) {
