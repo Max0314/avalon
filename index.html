@@ -3474,8 +3474,8 @@ function renderBottomStrip() {
       phaseInfo.style.display='block';
       const onTeam=_state.selectedTeam.includes(_state.myIndex);
       if(onTeam) {
-        phaseInfo.textContent='⚔️ You are on the quest. Choose your action:';
         if(!_state.questCards[me?.id]) {
+          phaseInfo.textContent='⚔️ You are on the quest. Choose your action:';
           const btn=document.createElement('button');
           btn.className='btn-primary';
           btn.textContent='Choose My Action Card';
@@ -3483,16 +3483,21 @@ function renderBottomStrip() {
           actionsDiv.appendChild(btn);
         } else {
           phaseInfo.textContent='✅ Action submitted. Awaiting others...';
-          if(isLeader && allQuestCardsIn()) {
-            const rb=document.createElement('button');
-            rb.className='btn-primary';
-            rb.textContent='🎴 Reveal Cards';
-            rb.onclick=startQuestReveal;
-            actionsDiv.appendChild(rb);
-          }
         }
       } else {
         phaseInfo.textContent='🏰 Quest in progress. Your companions deliberate in secret...';
+      }
+      // The leader can reveal once every teammate has submitted a card —
+      // this must NOT be nested under onTeam: the leader is often not on
+      // their own quest team, and was previously never shown this button
+      // in that case, leaving the game stuck here with no way forward.
+      if(isLeader && allQuestCardsIn()) {
+        phaseInfo.textContent='✅ All actions are in.';
+        const rb=document.createElement('button');
+        rb.className='btn-primary';
+        rb.textContent='🎴 Reveal Cards';
+        rb.onclick=startQuestReveal;
+        actionsDiv.appendChild(rb);
       }
       break;
 
@@ -4939,6 +4944,15 @@ function setupGameListeners() {
       if(prevPhase==='roleReveal' && data.phase!=='roleReveal') {
         hideModal('role-peek-modal');
         hideModal('moderated-night-modal');
+      }
+      // The leader's "Continue" only closes the modal on their own device.
+      // Everyone else needs the same close triggered here once the phase
+      // has actually moved on, or their screen stays stuck behind it.
+      if(prevPhase==='teamVote' && data.phase!=='teamVote') {
+        hideModal('vote-result-modal');
+      }
+      if(prevPhase==='questReveal' && data.phase!=='questReveal') {
+        hideModal('quest-reveal-modal');
       }
       // Everyone has confirmed their role — table goes dark together.
       if(data.phase==='nightPhase') {
