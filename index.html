@@ -3131,13 +3131,27 @@ function showRolePeekModal(isInitialReveal = false) {
   $('role-peek-align').innerHTML = `<span class="${isGood?'badge-good':'badge-evil'}" style="padding:3px 10px;border-radius:20px;border:1px solid ${isGood?'var(--blue-good-l)':'var(--red-evil-l)'};color:${isGood?'var(--blue-good-l)':'var(--red-evil-l)'};font-size:11px;">${isGood?'⚔️ Good':'🩸 Evil'}</span>`;
   $('role-peek-power').textContent = roleDef.power||'';
 
-  // "You can see" section removed — the separate intel glow panel covers this
-  $('role-peek-knows').style.display = 'none';
+  // Knows section inside the flip info panel
+  const knowsEl = $('role-peek-knows');
+  const knowsTxt = $('role-peek-knows-text');
+  if(roleKey==='merlin') {
+    knowsEl.style.display='block';
+    const evilPlayers = _state.players.filter(p=>!isGoodRole(_state.roles[p.id])&&_state.roles[p.id]!=='mordred').map(p=>p.name);
+    knowsTxt.textContent = evilPlayers.length ? evilPlayers.join(', '):'(None visible)';
+  } else if(roleKey==='percival') {
+    knowsEl.style.display='block';
+    const merlinClones = _state.players.filter(p=>['merlin','morgana'].includes(_state.roles[p.id])).map(p=>p.name);
+    knowsTxt.textContent = merlinClones.length ? merlinClones.join(' or '):'(None visible)';
+  } else if(GAME_TEXT_CONFIG.evilRoles.includes(roleKey) && roleKey!=='oberon') {
+    knowsEl.style.display='block';
+    const allies = _state.players.filter(p=>GAME_TEXT_CONFIG.evilRoles.includes(_state.roles[p.id])&&p.id!==_state.players[_state.myIndex].id&&_state.roles[p.id]!=='oberon').map(p=>p.name);
+    knowsTxt.textContent = allies.length ? allies.join(', '):'(You stand alone)';
+  } else {
+    knowsEl.style.display='none';
+  }
 
   // ── Intel glow panel (Solo mode, initial reveal only) ──────────
-  // Content is prepared now but panel stays HIDDEN until the card is flipped.
   const intelPanel = $('role-intel-panel');
-  let hasIntel = false;
   if(isInitialReveal && !isMod) {
     let label='', names='', cls='good';
     if(roleKey==='merlin') {
@@ -3160,10 +3174,13 @@ function showRolePeekModal(isInitialReveal = false) {
       $('role-intel-label').textContent=label;
       $('role-intel-names').textContent=names;
       $('role-intel-names').className=`role-intel-glow ${cls}`;
-      hasIntel = true;
+      intelPanel.style.display='block';
+    } else {
+      intelPanel.style.display='none';
     }
+  } else {
+    intelPanel.style.display='none';
   }
-  intelPanel.style.display = 'none'; // always hidden until card flips
 
   // ── Moderated mode: confirm / waiting UI ───────────────────────
   const closeBtn     = $('role-peek-close');
@@ -3184,21 +3201,19 @@ function showRolePeekModal(isInitialReveal = false) {
 
   showModal('role-peek-modal');
 
-  // Touch-hold to flip — intel panel appears with the card reveal, hides when released
+  // Touch-hold to flip
   const inner = document.getElementById('role-card-inner');
   let holdTimer=null;
   const startFlip = ()=>{
     holdTimer=setTimeout(()=>{
       inner.classList.add('flipped');
       $('role-peek-info').style.display='block';
-      if(hasIntel) intelPanel.style.display='block';
     },300);
   };
   const endFlip = ()=>{
     clearTimeout(holdTimer);
     inner.classList.remove('flipped');
     $('role-peek-info').style.display='none';
-    if(hasIntel) intelPanel.style.display='none';
   };
   cardWrap.addEventListener('touchstart',startFlip,{passive:true});
   cardWrap.addEventListener('touchend',endFlip,{passive:true});
