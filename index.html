@@ -547,6 +547,27 @@
       z-index: 20; display: none; -webkit-tap-highlight-color: transparent;
     }
     #role-peek-fab:active { transform: scale(0.93); }
+
+    /* ── Night Phase Intel Glow Panel ───────────────────────────── */
+    .role-intel-glow {
+      font-family: 'Cinzel', serif;
+      font-size: 15px;
+      letter-spacing: 1.5px;
+      line-height: 1.8;
+      animation: intelPulse 2.5s ease-in-out infinite;
+    }
+    .role-intel-glow.evil {
+      color: var(--red-evil-l);
+      text-shadow: 0 0 10px rgba(212,48,48,0.9), 0 0 24px rgba(212,48,48,0.4);
+    }
+    .role-intel-glow.good {
+      color: var(--gold);
+      text-shadow: 0 0 10px rgba(212,175,55,0.9), 0 0 24px rgba(212,175,55,0.4);
+    }
+    @keyframes intelPulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.55; }
+    }
     /* Floating "Game Guide" Button */
     #guide-fab {
       position: absolute; top: 10px; right: 16px;
@@ -1303,11 +1324,11 @@
   <div id="demo-panel" style="display:none;">
     <label>🧪 SANDBOX:</label>
     <select id="demo-player-select">
-      <option value="0">P1: Admin (You)</option>
-      <option value="1">P2: Astro </option>
-      <option value="2">P3: Jomar </option>
-      <option value="3">P4: Paul </option>
-      <option value="4">P5: Charlou</option>
+      <option value="0">P1: Merlin (You)</option>
+      <option value="1">P2: Percival</option>
+      <option value="2">P3: Assassin</option>
+      <option value="3">P4: Morgana</option>
+      <option value="4">P5: Good Servant</option>
     </select>
     <button id="demo-bot-all">⚡ Bot All</button>
     <button id="demo-force-phase">⏭ Phase</button>
@@ -1448,7 +1469,23 @@
         <button id="create-room-btn" class="btn-primary">⚔️ Create Room</button>
         <div class="toggle-wrap" style="margin-top:12px;">
           <span class="toggle-label">💧 Include Lady of the Lake</span>
-          <div class="toggle-switch on" id="create-lady-toggle"></div>
+          <div class="toggle-switch" id="create-lady-toggle"></div>
+        </div>
+        <div class="toggle-wrap" style="margin-top:8px;">
+          <span class="toggle-label">💀 Include Mordred</span>
+          <div class="toggle-switch" id="create-mordred-toggle"></div>
+        </div>
+        <div class="toggle-wrap" style="margin-top:8px;">
+          <span class="toggle-label">👁️ Include Oberon</span>
+          <div class="toggle-switch" id="create-oberon-toggle"></div>
+        </div>
+        <!-- Admin-only: Night Phase Mode toggle -->
+        <div id="night-phase-toggle-wrap" style="display:none;">
+          <div class="toggle-wrap" style="margin-top:8px;">
+            <span class="toggle-label">🌙 With Moderator Night Phase</span>
+            <div class="toggle-switch" id="create-night-toggle"></div>
+          </div>
+          <p style="font-size:10px;color:var(--parchment-dim);margin-top:4px;line-height:1.4;">You will see all roles and guide the Night Phase as Moderator. Players confirm their role before the game begins.</p>
         </div>
       </div>
 
@@ -1621,7 +1658,7 @@
 <div id="role-peek-modal" class="modal-backdrop">
   <div class="modal-box" style="text-align:center;">
     <h3 class="modal-title">Your Secret Identity</h3>
-    <p style="font-size:11px;color:var(--parchment-dim);margin-bottom:16px;">Touch and hold the card to reveal your role. Release to conceal.</p>
+    <p id="role-peek-instruction" style="font-size:11px;color:var(--parchment-dim);margin-bottom:16px;">Touch and hold the card to reveal your role. Release to conceal.</p>
     <div id="role-peek-card-wrap" style="display:flex;justify-content:center;margin-bottom:16px;"></div>
     <div id="role-peek-info" style="display:none;padding:12px;background:rgba(0,0,0,0.3);border-radius:10px;margin-bottom:14px;">
       <p id="role-peek-name" style="font-family:'Cinzel Decorative',cursive;font-size:14px;color:var(--gold);margin-bottom:6px;"></p>
@@ -1631,6 +1668,21 @@
         <p style="font-size:10px;color:var(--amber);font-weight:600;">👁️ You can see:</p>
         <p id="role-peek-knows-text" style="font-size:10px;color:var(--parchment-dim);"></p>
       </div>
+    </div>
+    <!-- Night Phase (Solo mode): glowing intel panel — initial reveal only -->
+    <div id="role-intel-panel" style="display:none;margin-bottom:14px;padding:14px 16px;border-radius:12px;border:1px solid rgba(212,175,55,0.35);background:rgba(0,0,0,0.35);">
+      <p id="role-intel-label" style="font-size:10px;color:var(--parchment-dim);letter-spacing:0.5px;margin-bottom:10px;"></p>
+      <p id="role-intel-names" class="role-intel-glow good"></p>
+    </div>
+    <!-- Moderated mode: confirm button -->
+    <div id="role-peek-confirm-wrap" style="display:none;margin-bottom:12px;">
+      <button id="role-peek-confirm-btn" class="btn-primary btn-small">✅ I've Seen My Role</button>
+    </div>
+    <!-- Moderated mode: waiting message (after confirming) -->
+    <div id="role-peek-waiting-wrap" style="display:none;margin-bottom:14px;padding:18px;background:rgba(0,0,0,0.3);border-radius:12px;border:1px solid var(--gold-dim);">
+      <p style="font-size:26px;margin-bottom:8px;">😴</p>
+      <p style="font-family:'Cinzel',serif;font-size:13px;color:var(--gold);letter-spacing:1.5px;margin-bottom:8px;">Close Your Eyes</p>
+      <p style="font-size:11px;color:var(--parchment-dim);line-height:1.5;">Wait for the Moderator to begin the Night Phase.</p>
     </div>
     <button id="role-peek-close" class="btn-primary">I Understand My Mission</button>
   </div>
@@ -1793,14 +1845,16 @@
       <select class="asset-select" id="asset-target-select">
         <option value="merlin">merlin.png</option>
         <option value="percival">percival.png</option>
-        <option value="good_generic">good_generic.png</option>
-        <option value="good_generic_alt">good_generic_alt.png</option>
+        <option value="loyal_servant_1">loyal_servant_of_arthur.png</option>
+        <option value="loyal_servant_2">loyal_servant_of_arthur_alt.png</option>
+        <option value="loyal_servant_3">loyal_servant_of_arthur_alt1.png</option>
         <option value="assassin">assassin.png</option>
         <option value="morgana">morgana.png</option>
         <option value="mordred">mordred.png</option>
         <option value="oberon">oberon.png</option>
-        <option value="evil_generic">evil_generic.png</option>
-        <option value="evil_generic_alt">evil_generic_alt.png</option>
+        <option value="minion_1">minion_of_mordred.png</option>
+        <option value="minion_2">minion_of_mordred_alt.png</option>
+        <option value="minion_3">minion_of_mordred_alt1.png</option>
         <option value="quest_success">quest_success.png</option>
         <option value="quest_fail">quest_fail.png</option>
       </select>
@@ -1869,6 +1923,19 @@
   <button id="endgame-lobby-btn" class="btn-primary" style="max-width:260px;">Return to Lobby</button>
 </div>
 <div id="confetti-overlay"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     MODAL: Moderated Night Phase — Moderator View
+═══════════════════════════════════════════════════════════════ -->
+<div id="moderated-night-modal" class="modal-backdrop">
+  <div class="modal-box" style="max-height:88dvh;overflow-y:auto;text-align:center;">
+    <h3 class="modal-title">🌙 Night Phase</h3>
+    <p style="font-size:11px;color:var(--parchment-dim);margin-bottom:14px;font-family:'Cinzel',serif;letter-spacing:0.5px;">Moderator View — All Roles</p>
+    <div id="mod-player-role-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px;text-align:left;"></div>
+    <div id="mod-confirm-counter" style="font-size:12px;color:var(--gold-dim);margin-bottom:14px;font-family:'Cinzel',serif;letter-spacing:1px;">0 / 0 players confirmed</div>
+    <button id="mod-start-game-btn" class="btn-primary" style="display:none;">⚔️ Begin the Quest</button>
+  </div>
+</div>
 
 <!-- ═══════════════════════════════════════════════════════════════
      MODAL: Game Guide (Icons + Roles)
@@ -2013,16 +2080,18 @@ const GAME_TEXT_CONFIG = {
     evilWins:   "💀 Evil Prevails",
   },
   roles: {
-    merlin:          { name:"Merlin",              align:"Good", emoji:"🧙", power:"You know who the evil players are, but must keep it secret or be assassinated at game end.", img:"./cards/merlin.png" },
-    percival:        { name:"Percival",             align:"Good", emoji:"🛡️", power:"You can see who claims to be Merlin — but Morgana also appears as Merlin to deceive you.", img:"./cards/percival.png" },
-    good_generic:    { name:"Loyal Servant",        align:"Good", emoji:"⚔️", power:"A faithful knight of Arthur. Use your deduction to root out the forces of Mordred.", img:"./cards/good_generic.png" },
-    good_generic_alt:{ name:"Loyal Servant",        align:"Good", emoji:"⚔️", power:"A faithful knight of Arthur. Use your deduction to root out the forces of Mordred.", img:"./cards/good_generic_alt.png" },
-    assassin:        { name:"Assassin",             align:"Evil", emoji:"🗡️", power:"You know your evil allies. If Good wins, you may attempt to assassinate Merlin to snatch victory.", img:"./cards/assassin.png" },
-    morgana:         { name:"Morgana",              align:"Evil", emoji:"🌙", power:"You appear as Merlin to Percival, sowing confusion among the good. Your true nature is hidden.", img:"./cards/morgana.png" },
-    mordred:         { name:"Mordred",              align:"Evil", emoji:"💀", power:"Your identity is hidden even from Merlin. The most dangerous servant of evil.", img:"./cards/mordred.png" },
-    oberon:          { name:"Oberon",               align:"Evil", emoji:"👁️", power:"You do not know your evil allies, and they do not know you. You act alone in shadow.", img:"./cards/oberon.png" },
-    evil_generic:    { name:"Minion of Mordred",    align:"Evil", emoji:"🩸", power:"A loyal servant of the dark. Work with your evil allies to sabotage Arthurian quests.", img:"./cards/evil_generic.png" },
-    evil_generic_alt:{ name:"Minion of Mordred",    align:"Evil", emoji:"🩸", power:"A loyal servant of the dark. Work with your evil allies to sabotage Arthurian quests.", img:"./cards/evil_generic_alt.png" },
+    merlin:           { name:"Merlin",              align:"Good", emoji:"🧙",  power:"You know who the evil players are, but must keep it secret or be assassinated at game end.", img:"./cards/merlin.png" },
+    percival:         { name:"Percival",             align:"Good", emoji:"🛡️", power:"You can see who claims to be Merlin — but Morgana also appears as Merlin to deceive you.", img:"./cards/percival.png" },
+    loyal_servant_1:  { name:"Loyal Servant",        align:"Good", emoji:"⚔️", power:"A faithful knight of Arthur. Use your deduction to root out the forces of Mordred.", img:"./cards/loyal_servant_of_arthur.png" },
+    loyal_servant_2:  { name:"Loyal Servant",        align:"Good", emoji:"⚔️", power:"A faithful knight of Arthur. Use your deduction to root out the forces of Mordred.", img:"./cards/loyal_servant_of_arthur_alt.png" },
+    loyal_servant_3:  { name:"Loyal Servant",        align:"Good", emoji:"⚔️", power:"A faithful knight of Arthur. Use your deduction to root out the forces of Mordred.", img:"./cards/loyal_servant_of_arthur_alt1.png" },
+    assassin:         { name:"Assassin",             align:"Evil", emoji:"🗡️", power:"You know your evil allies. If Good wins, you may attempt to assassinate Merlin to snatch victory.", img:"./cards/assassin.png" },
+    morgana:          { name:"Morgana",              align:"Evil", emoji:"🌙", power:"You appear as Merlin to Percival, sowing confusion among the good. Your true nature is hidden.", img:"./cards/morgana.png" },
+    mordred:          { name:"Mordred",              align:"Evil", emoji:"💀", power:"Your identity is hidden even from Merlin. The most dangerous servant of evil.", img:"./cards/mordred.png" },
+    oberon:           { name:"Oberon",               align:"Evil", emoji:"👁️", power:"You do not know your evil allies, and they do not know you. You act alone in shadow.", img:"./cards/oberon.png" },
+    minion_1:         { name:"Minion of Mordred",    align:"Evil", emoji:"🩸", power:"A loyal servant of the dark. Work with your evil allies to sabotage Arthurian quests.", img:"./cards/minion_of_mordred.png" },
+    minion_2:         { name:"Minion of Mordred",    align:"Evil", emoji:"🩸", power:"A loyal servant of the dark. Work with your evil allies to sabotage Arthurian quests.", img:"./cards/minion_of_mordred_alt.png" },
+    minion_3:         { name:"Minion of Mordred",    align:"Evil", emoji:"🩸", power:"A loyal servant of the dark. Work with your evil allies to sabotage Arthurian quests.", img:"./cards/minion_of_mordred_alt1.png" },
   },
   questSizes: {
     5:  [2,3,2,3,3], 6:  [2,3,4,3,4],
@@ -2033,8 +2102,8 @@ const GAME_TEXT_CONFIG = {
     5:{4:1}, 6:{4:1}, 7:{4:2}, 8:{4:2}, 9:{4:2}, 10:{4:2},
   },
   evilCount: { 5:2, 6:2, 7:3, 8:3, 9:3, 10:4 },
-  goodRoles: ["merlin","percival","good_generic","good_generic_alt"],
-  evilRoles: ["assassin","morgana","mordred","oberon","evil_generic","evil_generic_alt"],
+  goodRoles: ["merlin","percival","loyal_servant_1","loyal_servant_2","loyal_servant_3"],
+  evilRoles: ["assassin","morgana","mordred","oberon","minion_1","minion_2","minion_3"],
   caution:   "⚠️ Caution: You are registered as a Good Role. Think carefully before failing this quest, as sabotaging an Arthurian venture directly benefits the forces of Evil.",
   nomLeader: "[Leader] is currently choosing companions...",
   winGood:   "The Knights of the Round Table have prevailed!",
@@ -2092,6 +2161,10 @@ let _state = {
   ladyHolder:       0,
   ladyEnabled:      false,
   ladyBroadcast:    null,
+  nightPhaseMode:   'solo',   // 'solo' | 'moderated'
+  roleConfirms:     {},        // { [uid]: true } — moderated mode confirmations
+  includeMordred:   false,     // host toggle — add Mordred to evil pool
+  includeOberon:    false,     // host toggle — add Oberon to evil pool
   disconnectInfo:   null,      // {playerId,playerName,status:'choice'|'waiting'} or null
   questVotes:       {},       // {playerId: 'approve'|'reject'}
   questCards:       {},       // {playerId: 'success'|'fail'} (server-side anonymized)
@@ -2542,6 +2615,9 @@ function goToLobby(name) {
   showScreen('screen-lobby');
   setNavPhase('Lobby');
   $('lobby-username').textContent = name;
+  // Night Phase toggle only visible to adminDan
+  const nightWrap = $('night-phase-toggle-wrap');
+  if(nightWrap) nightWrap.style.display = _state.isAdmin ? 'block' : 'none';
   if(!DEMO_MODE_ACTIVE) loadAvailableRooms();
   // Show demo rooms if demo mode
   if(DEMO_MODE_ACTIVE) {
@@ -2618,10 +2694,13 @@ function createRoom() {
   setLoading(btn, true, 'Creating…');
   const { ref, set } = window._firebaseModules;
   const uid = _state.currentUser.uid;
-  const ladyEnabled = $('create-lady-toggle')?.classList.contains('on') ?? true;
+  const ladyEnabled    = $('create-lady-toggle')?.classList.contains('on') ?? false;
+  const includeMordred = $('create-mordred-toggle')?.classList.contains('on') ?? false;
+  const includeOberon  = $('create-oberon-toggle')?.classList.contains('on') ?? false;
+  const nightPhaseMode = (_state.isAdmin && $('create-night-toggle')?.classList.contains('on')) ? 'moderated' : 'solo';
   set(ref(_state.db, `rooms/${code}`), {
     hostId: uid, maxPlayers, phase:'staging',
-    createdAt: Date.now(), ladyEnabled,
+    createdAt: Date.now(), ladyEnabled, nightPhaseMode, includeMordred, includeOberon,
     players: { [uid]: { name:_state.currentUser.displayName, emoji:_state.heroIcon||getPlayerEmoji(0), isHost:true, connected:true } }
   }).then(()=>{
     if(_state.isAdmin) _state.createdRooms.push({code, maxPlayers, createdAt:Date.now()});
@@ -2673,7 +2752,7 @@ function joinDemoRoom() {
 ════════════════════════════════════════════════════════════════ */
 function setupDemoRoom(code, maxPlayers) {
   const demoNames = ["Merlin","Percival","Assassin","Morgana","Knight"];
-  const demoRoles = ["merlin","percival","assassin","morgana","good_generic"];
+  const demoRoles = ["merlin","percival","assassin","morgana","loyal_servant_1"];
 
   _state.roomCode = code;
   _state.players  = demoNames.map((n,i)=>({
@@ -2692,7 +2771,10 @@ function setupDemoRoom(code, maxPlayers) {
   _state.phase    = 'staging';
   _state.currentLeader = 0;
   _state.ladyHolder    = 1;
-  _state.ladyEnabled   = $('create-lady-toggle')?.classList.contains('on') ?? true;
+  _state.ladyEnabled   = $('create-lady-toggle')?.classList.contains('on') ?? false;
+  _state.includeMordred = $('create-mordred-toggle')?.classList.contains('on') ?? false;
+  _state.includeOberon  = $('create-oberon-toggle')?.classList.contains('on') ?? false;
+  _state.nightPhaseMode = (_state.isAdmin && $('create-night-toggle')?.classList.contains('on')) ? 'moderated' : 'solo';
   _state.questIndex    = 0;
   _state.questResults  = [];
   _state.voteTrack     = 0;
@@ -2821,23 +2903,28 @@ function renderRoleConfig() {
 $('start-game-btn')?.addEventListener('click', startGame);
 
 function buildRoleSet(n) {
-  const evilN  = GAME_TEXT_CONFIG.evilCount[n]||2;
-  const goodN  = n - evilN;
+  const evilN = GAME_TEXT_CONFIG.evilCount[n]||2;
+  const goodN = n - evilN;
 
-  // Always include Merlin + Percival; fill remaining good slots from generic pool
-  const goodGenerics = shuffle(["good_generic","good_generic_alt","good_generic","good_generic_alt"]);
-  const goodRoles = ["merlin", "percival", ...goodGenerics].slice(0, goodN);
+  // Always: Merlin + Percival. Remaining good slots filled from shuffled servant pool.
+  // Pool has all 3 variants; for 10-player games (4 servant slots) servant_1 repeats once.
+  const servantPool = shuffle(["loyal_servant_1","loyal_servant_2","loyal_servant_3","loyal_servant_1"]);
+  const goodRoles = ["merlin","percival",...servantPool].slice(0, goodN);
 
-  // Always include Assassin + Morgana; fill remaining evil slots from specials (Mordred/Oberon) then generics
-  const evilSpecialPool = shuffle(["mordred","oberon"]);
-  const genericPool     = shuffle(["evil_generic","evil_generic_alt","evil_generic","evil_generic_alt"]);
-  const evilRoles = ["assassin", "morgana"];
+  // Always: Assassin + Morgana. Optional specials gated by host toggles.
+  // Remaining evil slots filled from shuffled minion pool (all 3 variants).
+  const specialPool = shuffle([
+    ...(_state.includeMordred ? ["mordred"] : []),
+    ...(_state.includeOberon  ? ["oberon"]  : []),
+  ]);
+  const minionPool = shuffle(["minion_1","minion_2","minion_3","minion_1","minion_2"]);
+  const evilRoles = ["assassin","morgana"];
 
   while(evilRoles.length < evilN) {
-    if(evilSpecialPool.length>0) {
-      evilRoles.push(evilSpecialPool.shift());
+    if(specialPool.length > 0) {
+      evilRoles.push(specialPool.shift());
     } else {
-      evilRoles.push(genericPool.shift());
+      evilRoles.push(minionPool.shift());
     }
   }
   return shuffle([...goodRoles, ...evilRoles]);
@@ -2878,7 +2965,13 @@ function enterGameScreen() {
   attachSeatHoldPeek();
 
   if(_state.phase === 'roleReveal') {
-    setTimeout(showRolePeekModal, 500);
+    if(_state.nightPhaseMode === 'moderated' && _state.isAdmin) {
+      // Moderator sees all roles + confirm counter instead of their own card
+      setTimeout(showModeratorNightPanel, 500);
+    } else {
+      // All players (and admin in solo mode) see their own role card
+      setTimeout(() => showRolePeekModal(true), 500);
+    }
   }
   setupGameListeners();
 }
@@ -2988,16 +3081,17 @@ function renderQuestBoard() {
 /* ════════════════════════════════════════════════════════════════
    ROLE PEEK MODAL
 ════════════════════════════════════════════════════════════════ */
-function showRolePeekModal() {
+function showRolePeekModal(isInitialReveal = false) {
   const roleKey  = _state.myRole;
   const roleDef  = GAME_TEXT_CONFIG.roles[roleKey]||{};
   const isGood   = isGoodRole(roleKey);
-  // Prefer admin-uploaded asset, fall back to ./cards/ static file
   const imgSrc   = _state.customAssets[roleKey] || roleDef.img || '';
+  const isMod    = (_state.nightPhaseMode === 'moderated');
 
   // Build card
   const wrap = $('role-peek-card-wrap');
   wrap.innerHTML='';
+  wrap.style.display='flex';
   const cardWrap = document.createElement('div');
   cardWrap.className='card-3d-wrap';
   cardWrap.innerHTML=`
@@ -3012,12 +3106,12 @@ function showRolePeekModal() {
     </div>`;
   wrap.appendChild(cardWrap);
 
-  // Fill info
+  // Fill flip-info
   $('role-peek-name').textContent = roleDef.name||'';
   $('role-peek-align').innerHTML = `<span class="${isGood?'badge-good':'badge-evil'}" style="padding:3px 10px;border-radius:20px;border:1px solid ${isGood?'var(--blue-good-l)':'var(--red-evil-l)'};color:${isGood?'var(--blue-good-l)':'var(--red-evil-l)'};font-size:11px;">${isGood?'⚔️ Good':'🩸 Evil'}</span>`;
   $('role-peek-power').textContent = roleDef.power||'';
 
-  // Special vision
+  // Knows section inside the flip info panel
   const knowsEl = $('role-peek-knows');
   const knowsTxt = $('role-peek-knows-text');
   if(roleKey==='merlin') {
@@ -3034,6 +3128,55 @@ function showRolePeekModal() {
     knowsTxt.textContent = allies.length ? allies.join(', '):'(You stand alone)';
   } else {
     knowsEl.style.display='none';
+  }
+
+  // ── Intel glow panel (Solo mode, initial reveal only) ──────────
+  const intelPanel = $('role-intel-panel');
+  if(isInitialReveal && !isMod) {
+    let label='', names='', cls='good';
+    if(roleKey==='merlin') {
+      const ev = _state.players.filter(p=>!isGoodRole(_state.roles[p.id])&&_state.roles[p.id]!=='mordred').map(p=>p.name);
+      label='👁️ The darkness reveals itself to you:';
+      names=ev.length ? ev.join('  ·  '):'(None visible to you)';
+      cls='evil';
+    } else if(roleKey==='percival') {
+      const mc = _state.players.filter(p=>['merlin','morgana'].includes(_state.roles[p.id])).map(p=>p.name);
+      label='⚗️ One of these claims to be Merlin:';
+      names=mc.length ? mc.join('  ·  '):'(None visible to you)';
+      cls='good';
+    } else if(GAME_TEXT_CONFIG.evilRoles.includes(roleKey) && roleKey!=='oberon') {
+      const al = _state.players.filter(p=>GAME_TEXT_CONFIG.evilRoles.includes(_state.roles[p.id])&&p.id!==_state.players[_state.myIndex].id&&_state.roles[p.id]!=='oberon').map(p=>p.name);
+      label='🩸 Your Evil allies are:';
+      names=al.length ? al.join('  ·  '):'(You stand alone in the shadows)';
+      cls='evil';
+    }
+    if(names) {
+      $('role-intel-label').textContent=label;
+      $('role-intel-names').textContent=names;
+      $('role-intel-names').className=`role-intel-glow ${cls}`;
+      intelPanel.style.display='block';
+    } else {
+      intelPanel.style.display='none';
+    }
+  } else {
+    intelPanel.style.display='none';
+  }
+
+  // ── Moderated mode: confirm / waiting UI ───────────────────────
+  const closeBtn     = $('role-peek-close');
+  const confirmWrap  = $('role-peek-confirm-wrap');
+  const waitingWrap  = $('role-peek-waiting-wrap');
+  if(isInitialReveal && isMod) {
+    closeBtn.style.display='none';
+    confirmWrap.style.display='block';
+    waitingWrap.style.display='none';
+    $('role-peek-instruction').textContent='Touch and hold the card to reveal your role, then confirm below.';
+  } else {
+    closeBtn.style.display='block';
+    closeBtn.textContent='I Understand My Mission';
+    confirmWrap.style.display='none';
+    waitingWrap.style.display='none';
+    $('role-peek-instruction').textContent='Touch and hold the card to reveal your role. Release to conceal.';
   }
 
   showModal('role-peek-modal');
@@ -3066,6 +3209,78 @@ $('role-peek-close')?.addEventListener('click', ()=>{
   renderQuestBoard();
   renderBottomStrip();
   setNavPhase('Nomination');
+});
+
+// Player confirms they've seen their role in moderated Night Phase
+function confirmRoleSeen() {
+  // Show waiting UI, hide card and confirm button
+  $('role-peek-card-wrap').style.display='none';
+  $('role-peek-info').style.display='none';
+  $('role-peek-confirm-wrap').style.display='none';
+  $('role-peek-waiting-wrap').style.display='block';
+
+  const uid = _state.currentUser?.uid;
+  if(!uid) return;
+  if(!DEMO_MODE_ACTIVE && _state.db && window._firebaseModules && _state.roomCode) {
+    const { ref, update } = window._firebaseModules;
+    update(ref(_state.db), { [`rooms/${_state.roomCode}/roleConfirms/${uid}`]: true }).catch(()=>{});
+  } else {
+    // Demo mode: just mark locally and update panel
+    _state.roleConfirms[uid] = true;
+  }
+}
+
+$('role-peek-confirm-btn')?.addEventListener('click', confirmRoleSeen);
+
+// Moderator (adminDan) view during moderated Night Phase
+function showModeratorNightPanel() {
+  const list = $('mod-player-role-list');
+  list.innerHTML='';
+  _state.players.forEach(p=>{
+    const roleKey = _state.roles[p.id];
+    const roleDef = GAME_TEXT_CONFIG.roles[roleKey]||{};
+    const isGood  = isGoodRole(roleKey);
+    const row = document.createElement('div');
+    row.className='assassin-pick-row';
+    row.style.cssText='pointer-events:none;justify-content:space-between;';
+    row.innerHTML=`
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div class="roster-avatar">${p.emoji}</div>
+        <span style="font-size:13px;color:var(--parchment);">${p.name}</span>
+      </div>
+      <span style="font-size:11px;font-family:'Cinzel',serif;color:${isGood?'var(--blue-good-l)':'var(--red-evil-l)'};">${roleDef.name||roleKey}</span>`;
+    list.appendChild(row);
+  });
+  updateModeratorPanel();
+  showModal('moderated-night-modal');
+}
+
+function updateModeratorPanel() {
+  const confirms = _state.roleConfirms||{};
+  const n = _state.players.length;
+  // Exclude the moderator (adminDan) from the count — they confirm via "Begin the Quest"
+  const nonAdminPlayers = _state.players.filter(p=>p.id!==_state.currentUser?.uid);
+  const total = nonAdminPlayers.length;
+  const count = nonAdminPlayers.filter(p=>confirms[p.id]).length;
+  const counterEl = $('mod-confirm-counter');
+  const startBtn  = $('mod-start-game-btn');
+  if(counterEl) counterEl.textContent=`${count} / ${total} players confirmed`;
+  if(startBtn)  startBtn.style.display = (count>=total && total>0) ? 'block':'none';
+}
+
+$('mod-start-game-btn')?.addEventListener('click',()=>{
+  hideModal('moderated-night-modal');
+  if(!DEMO_MODE_ACTIVE && _state.db && window._firebaseModules && _state.roomCode) {
+    const { ref, update } = window._firebaseModules;
+    update(ref(_state.db),{
+      [`rooms/${_state.roomCode}/phase`]:'nominate',
+      [`rooms/${_state.roomCode}/roleConfirms`]:null,
+    }).catch(e=>showToast(e.message,'error'));
+  } else {
+    _state.phase='nominate';
+    _state.roleConfirms={};
+    renderTable(); renderQuestBoard(); renderBottomStrip(); setNavPhase('Nomination');
+  }
 });
 
 /* ════════════════════════════════════════════════════════════════
@@ -3591,25 +3806,35 @@ function broadcastLadyChoice(fromIdx, toIdx) {
   update(ref(_state.db), { [`rooms/${_state.roomCode}/ladyBroadcast`]: payload }).catch(e=>showToast(e.message,'error'));
 }
 
-// Renders the "X inspected Y's Loyalty" prompt to every player,
-// tracks read receipts, and finalizes the token pass once everyone has read it.
+// Renders the "X inspected Y's Loyalty" prompt to every player.
+// The lady holder sees a "Waiting for others" counter; everyone else sees the
+// "I've Read This" button. Finalizes the token pass once all have acknowledged.
 function handleLadyBroadcast(broadcast) {
   if(!broadcast) { hideModal('lady-broadcast-modal'); return; }
   const uid=_state.currentUser?.uid;
   const ack=broadcast.ack||{};
   const ackCount=Object.keys(ack).length;
   const n=_state.players.length || 1;
-  const alreadyRead=!!ack[uid];
+
+  const ladyHolderUid = _state.players[broadcast.fromIdx]?.id;
+  const isHolder = uid === ladyHolderUid;
+  const alreadyRead = !!ack[uid];
+
+  // Counter excludes the holder's auto-ack so it reads "0/4" not "1/5"
+  const otherTotal = Math.max(n - 1, 1);
+  const otherAcked = Math.max(ackCount - 1, 0);
 
   $('lady-broadcast-text').textContent=`${broadcast.fromName} has inspected ${broadcast.toName}'s loyalty.`;
-  $('lady-broadcast-count').textContent=`${Math.min(ackCount,n)} / ${n} players acknowledged`;
-  $('lady-broadcast-btn').style.display=alreadyRead?'none':'block';
-  $('lady-broadcast-waiting').style.display=alreadyRead?'block':'none';
+  $('lady-broadcast-count').textContent=`${Math.min(otherAcked, otherTotal)} / ${otherTotal} players acknowledged`;
+
+  // Holder always sees "Waiting for others"; others see the ack button until they tap it
+  $('lady-broadcast-btn').style.display = (!isHolder && !alreadyRead) ? 'block' : 'none';
+  $('lady-broadcast-waiting').style.display = (isHolder || alreadyRead) ? 'block' : 'none';
 
   // Ensure the live-mode button has the correct onclick (not the demo override)
   if(!$('lady-broadcast-btn')._liveWired) {
     $('lady-broadcast-btn')._liveWired = true;
-    $('lady-broadcast-btn').onclick = null; // clear any demo override
+    $('lady-broadcast-btn').onclick = null;
   }
 
   showModal('lady-broadcast-modal');
@@ -3717,7 +3942,7 @@ function endGame(result) {
   // Reveal all roles
   roles.innerHTML='<p style="font-family:\'Cinzel\',serif;font-size:11px;color:var(--gold);margin-bottom:8px;">Role Reveal:</p>';
   _state.players.forEach(p=>{
-    const rk=_state.roles[p.id]||'good_generic';
+    const rk=_state.roles[p.id]||'loyal_servant_1';
     const rd=GAME_TEXT_CONFIG.roles[rk]||{};
     const iG=isGoodRole(rk);
     const row=document.createElement('div');
@@ -3734,7 +3959,7 @@ function endGame(result) {
 function persistMatchResultToAccount(result) {
   const me = _state.players[_state.myIndex];
   if(!me) return;
-  const myRoleKey = _state.roles[me.id] || 'good_generic';
+  const myRoleKey = _state.roles[me.id] || 'loyal_servant_1';
   const roleDef   = GAME_TEXT_CONFIG.roles[myRoleKey] || {};
   const myAlignGood = isGoodRole(myRoleKey);
 
@@ -4334,6 +4559,10 @@ function loadGameState(data, fromListener=false) {
   _state.ladyEnabled   = data.ladyEnabled||false;
   _state.ladyHolder    = data.ladyHolder||0;
   _state.ladyBroadcast = data.ladyBroadcast||null;
+  _state.nightPhaseMode = data.nightPhaseMode||'solo';
+  _state.roleConfirms   = data.roleConfirms||{};
+  _state.includeMordred = data.includeMordred||false;
+  _state.includeOberon  = data.includeOberon||false;
   _state.roles         = data.roles||{};
   const uid=_state.currentUser?.uid;
   _state.myRole        = _state.roles[uid];
@@ -4370,6 +4599,10 @@ function setupGameListeners() {
     }
     renderTable(); renderQuestBoard(); renderBottomStrip(); setNavPhase(_state.phase);
     handleLadyBroadcast(data.ladyBroadcast);
+    // Keep moderator night panel in sync as players confirm
+    if(_state.nightPhaseMode==='moderated' && _state.phase==='roleReveal' && _state.isAdmin) {
+      updateModeratorPanel();
+    }
     if(data.phase!==prevPhase) {
       // Phase changed — react
       if(data.phase==='teamVote' && Object.keys(data.questVotes||{}).length===_state.players.length) {
