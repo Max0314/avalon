@@ -1468,8 +1468,8 @@
         <p style="font-size:12px;color:var(--parchment-dim);margin-top:4px;letter-spacing:1px;font-family:'Cinzel',serif;">Choose your path to the Round Table</p>
       </div>
 
-      <!-- Create Room -->
-      <div style="background:var(--bg-card);border:1px solid rgba(212,175,55,0.3);border-radius:16px;padding:18px;margin-bottom:12px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+      <!-- Create Room (visible only to adminDan and username "dan") -->
+      <div id="host-a-game-card" style="background:var(--bg-card);border:1px solid rgba(212,175,55,0.3);border-radius:16px;padding:18px;margin-bottom:12px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
         <p class="font-cinzel-sm" style="color:var(--gold);font-size:13px;margin-bottom:12px;letter-spacing:1px;">⚔️ HOST A GAME</p>
         <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;">
           <label style="font-size:13px;color:var(--parchment-dim);white-space:nowrap;font-weight:500;">Players:</label>
@@ -1543,6 +1543,11 @@
       <div id="staging-role-config" style="background:var(--bg-card);border:1px solid var(--gold-dim);border-radius:14px;padding:14px;margin-bottom:12px;display:none;">
         <p class="font-cinzel-sm" style="color:var(--gold);font-size:12px;margin-bottom:10px;">🎭 ROLE CONFIGURATION</p>
         <div id="role-config-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+      </div>
+      <div id="staging-seat-config" style="background:var(--bg-card);border:1px solid var(--gold-dim);border-radius:14px;padding:14px;margin-bottom:12px;display:none;">
+        <p class="font-cinzel-sm" style="color:var(--gold);font-size:12px;margin-bottom:4px;">🪑 SEATING &amp; FIRST LEADER</p>
+        <p style="font-size:10px;color:var(--parchment-dim);margin-bottom:10px;line-height:1.4;">Arrange seats to match the real table with ▲▼, and tap ☆ to choose who leads the first quest.</p>
+        <div id="seat-order-list" style="display:flex;flex-direction:column;"></div>
       </div>
       <div id="staging-host-controls" style="display:none;">
         <button id="start-game-btn" class="btn-primary" style="display:none;">⚔️ Begin Quest</button>
@@ -1695,9 +1700,9 @@
     </div>
     <!-- Moderated mode: waiting message (after confirming) -->
     <div id="role-peek-waiting-wrap" style="display:none;margin-bottom:14px;padding:18px;background:rgba(0,0,0,0.3);border-radius:12px;border:1px solid var(--gold-dim);">
-     <!-- <p style="font-size:26px;margin-bottom:8px;">😴</p> 
-      <p style="font-family:'Cinzel',serif;font-size:13px;color:var(--gold);letter-spacing:1.5px;margin-bottom:8px;">Close Your Eyes</p> -->
-      <p id="role-peek-waiting-subtext" style="font-size:16px;color:var(--parchment-dim);line-height:1.5;">Wait for the Moderator to begin the Night Phase.</p>
+      <p style="font-size:26px;margin-bottom:8px;">😴</p>
+      <p style="font-family:'Cinzel',serif;font-size:13px;color:var(--gold);letter-spacing:1.5px;margin-bottom:8px;">Close Your Eyes</p>
+      <p id="role-peek-waiting-subtext" style="font-size:11px;color:var(--parchment-dim);line-height:1.5;">Wait for the Moderator to begin the Night Phase.</p>
     </div>
     <button id="role-peek-close" class="btn-primary">I Understand My Mission</button>
   </div>
@@ -2190,6 +2195,7 @@ let _state = {
   questResults:     [],       // 'success'|'fail'
   voteTrack:        0,        // 0-4 failed consecutive votes
   currentLeader:    0,        // index in players[]
+  firstLeaderId:    null,     // host-chosen uid for the first leader (resolved to index at start)
   selectedTeam:     [],       // indices of nominated players
   myVote:           null,
   myQuestCard:      null,
@@ -2653,6 +2659,11 @@ function goToLobby(name) {
   // Night Phase toggle only visible to adminDan
   const nightWrap = $('night-phase-toggle-wrap');
   if(nightWrap) nightWrap.style.display = _state.isAdmin ? 'block' : 'none';
+  // Host a Game is restricted to adminDan and username "dan" — everyone
+  // else can only join a room a host already created.
+  const canHost = _state.isAdmin || (name||'').toLowerCase()==='dan';
+  const hostCard = $('host-a-game-card');
+  if(hostCard) hostCard.style.display = canHost ? 'block' : 'none';
   if(!DEMO_MODE_ACTIVE) loadAvailableRooms();
   // Show demo rooms if demo mode
   if(DEMO_MODE_ACTIVE) {
@@ -2754,7 +2765,7 @@ function createRoom() {
   set(ref(_state.db, `rooms/${code}`), {
     hostId: uid, maxPlayers, phase:'staging',
     createdAt: Date.now(), ladyEnabled, nightPhaseMode, includeMordred, includeOberon,
-    players: { [uid]: { name:_state.currentUser.displayName, emoji:_state.heroIcon||getPlayerEmoji(0), isHost:true, connected:true } }
+    players: { [uid]: { name:_state.currentUser.displayName, emoji:_state.heroIcon||getPlayerEmoji(0), isHost:true, connected:true, order:0 } }
   }).then(()=>{
     if(_state.isAdmin) _state.createdRooms.push({code, maxPlayers, createdAt:Date.now()});
     setLoading(btn, false);
@@ -2786,7 +2797,7 @@ function joinRoom(code) {
     update(ref(_state.db, `rooms/${code}/players/${uid}`), {
       name: _state.currentUser.displayName,
       emoji: _state.heroIcon||getPlayerEmoji(count),
-      isHost: false, connected:true
+      isHost: false, connected:true, order: count
     }).then(()=>{
       setLoading($('join-room-btn'), false);
       _state.roomCode = code;
@@ -2815,12 +2826,14 @@ function setupDemoRoom(code, maxPlayers) {
     isLocal: i === _state.demoPlayerIndex,
     isHost:  i === 0,
     connected: true,
+    order: i,
   }));
 
   _state.roles = {};
   _state.players.forEach((p,i)=>{ _state.roles[p.id] = demoRoles[i]; });
   _state.myIndex  = _state.demoPlayerIndex;
   _state.myRole   = _state.roles[_state.players[_state.myIndex].id];
+  _state.firstLeaderId = null;
   _state.phase    = 'staging';
   _state.currentLeader = 0;
   _state.ladyHolder    = 1;
@@ -2897,7 +2910,9 @@ function enterStagingScreen(code, isHost) {
     if(isHost) {
       $('staging-host-controls').style.display='block';
       $('staging-role-config').style.display='block';
+      $('staging-seat-config').style.display='block';
       renderRoleConfig();
+      renderSeatOrderConfig();
       $('start-game-btn').style.display='block';
     }
     $('staging-status').textContent = `${_state.players.length}/${_state.players.length} players ready`;
@@ -2916,14 +2931,19 @@ function enterStagingScreen(code, isHost) {
     // re-runs enterGameScreen() (and re-pops modals) on every single vote,
     // quest card, or role confirmation for the rest of the match.
     if(data.phase !== 'staging') { unsub(); loadGameState(data); return; }
-    const players = Object.entries(data.players||{}).map(([id,p],i)=>({id,...p,isLocal:id===_state.currentUser?.uid,isHost:data.hostId===id}));
+    const players = Object.entries(data.players||{})
+      .map(([id,p])=>({id,...p,isLocal:id===_state.currentUser?.uid,isHost:data.hostId===id}))
+      .sort((a,b)=>(a.order??0)-(b.order??0));
     _state.players = players;
+    _state.firstLeaderId = data.firstLeaderId || null;
     renderStagingPlayers();
     $('staging-status').textContent = `${players.length}/${data.maxPlayers} players`;
     if(isHost) {
       $('staging-host-controls').style.display='block';
       $('staging-role-config').style.display='block';
+      $('staging-seat-config').style.display='block';
       renderRoleConfig();
+      renderSeatOrderConfig();
       $('start-game-btn').style.display = players.length>=data.maxPlayers ? 'block':'none';
     }
     setupDisconnectHandlers();
@@ -2956,6 +2976,87 @@ function renderRoleConfig() {
     <p style="font-size:11px;color:var(--parchment-dim);">For <strong style="color:var(--parchment)">${n}</strong> players: <strong style="color:var(--blue-good-l)">${goodN} Good</strong> · <strong style="color:var(--red-evil-l)">${evilN} Evil</strong></p>
     <p style="font-size:10px;color:var(--gold-dim);margin-top:4px;">Roles are auto-assigned. Special roles (Merlin, Assassin) always included.</p>
   `;
+}
+
+// Host-only, staging-only: lets the host match seat order to the real
+// table and pick who leads the first quest. Both are just local seat
+// bookkeeping (an explicit `order` field per player) so every bit of the
+// existing index-based game logic — leader tracking, Lady of the Lake,
+// quest teams — keeps working unchanged once the game actually starts.
+function renderSeatOrderConfig() {
+  const list = $('seat-order-list');
+  if(!list) return;
+  list.innerHTML = '';
+  const players = _state.players;
+  const firstLeaderId = _state.firstLeaderId || players[0]?.id;
+
+  players.forEach((p,i)=>{
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid rgba(212,175,55,0.1);';
+    row.innerHTML = `
+      <span style="width:16px;text-align:center;font-size:11px;color:var(--gold-dim);flex-shrink:0;">${i+1}</span>
+      <div class="lobby-player-avatar" style="width:30px;height:30px;font-size:15px;flex-shrink:0;">${p.emoji}</div>
+      <span style="flex:1;font-size:12px;color:var(--parchment);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name}</span>
+    `;
+
+    const isLeader = p.id === firstLeaderId;
+    const leaderBtn = document.createElement('button');
+    leaderBtn.textContent = isLeader ? '👑' : '☆';
+    leaderBtn.title = 'Set as first Leader';
+    leaderBtn.style.cssText = `width:28px;height:28px;flex-shrink:0;border-radius:6px;border:1px solid var(--gold-dim);background:${isLeader?'rgba(212,175,55,0.28)':'rgba(255,255,255,0.04)'};color:var(--gold);font-size:13px;cursor:pointer;`;
+    leaderBtn.onclick = () => setFirstLeader(p.id);
+    row.appendChild(leaderBtn);
+
+    const upBtn = document.createElement('button');
+    upBtn.textContent = '▲';
+    upBtn.disabled = i === 0;
+    upBtn.style.cssText = `width:26px;height:26px;flex-shrink:0;border-radius:6px;border:1px solid var(--gold-dim);background:rgba(255,255,255,0.04);color:var(--parchment-dim);font-size:11px;cursor:pointer;opacity:${i===0?'0.3':'1'};`;
+    upBtn.onclick = () => swapSeatOrder(p.id, players[i-1]?.id);
+    row.appendChild(upBtn);
+
+    const downBtn = document.createElement('button');
+    downBtn.textContent = '▼';
+    downBtn.disabled = i === players.length-1;
+    downBtn.style.cssText = `width:26px;height:26px;flex-shrink:0;border-radius:6px;border:1px solid var(--gold-dim);background:rgba(255,255,255,0.04);color:var(--parchment-dim);font-size:11px;cursor:pointer;opacity:${i===players.length-1?'0.3':'1'};`;
+    downBtn.onclick = () => swapSeatOrder(p.id, players[i+1]?.id);
+    row.appendChild(downBtn);
+
+    list.appendChild(row);
+  });
+}
+
+function swapSeatOrder(uidA, uidB) {
+  if(!uidA || !uidB) return;
+  const pA = _state.players.find(p=>p.id===uidA);
+  const pB = _state.players.find(p=>p.id===uidB);
+  if(!pA || !pB) return;
+  const orderA = pA.order ?? 0;
+  const orderB = pB.order ?? 0;
+
+  if(DEMO_MODE_ACTIVE) {
+    pA.order = orderB; pB.order = orderA;
+    _state.players.sort((a,b)=>(a.order??0)-(b.order??0));
+    renderStagingPlayers();
+    renderSeatOrderConfig();
+    return;
+  }
+  if(!_state.db || !window._firebaseModules || !_state.roomCode) return;
+  const { ref, update } = window._firebaseModules;
+  update(ref(_state.db), {
+    [`rooms/${_state.roomCode}/players/${uidA}/order`]: orderB,
+    [`rooms/${_state.roomCode}/players/${uidB}/order`]: orderA,
+  }).catch(e=>showToast(e.message,'error'));
+}
+
+function setFirstLeader(uid) {
+  if(DEMO_MODE_ACTIVE) {
+    _state.firstLeaderId = uid;
+    renderSeatOrderConfig();
+    return;
+  }
+  if(!_state.db || !window._firebaseModules || !_state.roomCode) return;
+  const { ref, update } = window._firebaseModules;
+  update(ref(_state.db), { [`rooms/${_state.roomCode}/firstLeaderId`]: uid }).catch(e=>showToast(e.message,'error'));
 }
 
 $('start-game-btn')?.addEventListener('click', startGame);
@@ -2991,8 +3092,11 @@ function buildRoleSet(n) {
 function startGame() {
   const roles = buildRoleSet(_state.players.length);
   _state.players.forEach((p,i)=>{ _state.roles[p.id] = roles[i]; });
+  // Resolve the host's chosen first leader (by id, so seat rearranging
+  // beforehand can't desync it) into an index; fall back to seat 0.
+  const leaderIdx = Math.max(0, _state.players.findIndex(p => p.id === (_state.firstLeaderId || _state.players[0]?.id)));
   _state.phase         = 'roleReveal';
-  _state.currentLeader = 0;
+  _state.currentLeader = leaderIdx;
   _state.questIndex    = 0;
   _state.questResults  = [];
   _state.voteTrack     = 0;
@@ -3005,7 +3109,7 @@ function startGame() {
   }
   if(!_state.db || !window._firebaseModules) return;
   const { ref, update } = window._firebaseModules;
-  const updates = { [`rooms/${_state.roomCode}/phase`]: 'roleReveal', [`rooms/${_state.roomCode}/currentLeader`]: 0, [`rooms/${_state.roomCode}/questIndex`]: 0, [`rooms/${_state.roomCode}/voteTrack`]: 0 };
+  const updates = { [`rooms/${_state.roomCode}/phase`]: 'roleReveal', [`rooms/${_state.roomCode}/currentLeader`]: leaderIdx, [`rooms/${_state.roomCode}/questIndex`]: 0, [`rooms/${_state.roomCode}/voteTrack`]: 0 };
   _state.players.forEach((p,i)=>{ updates[`rooms/${_state.roomCode}/roles/${p.id}`] = roles[i]; });
   update(ref(_state.db), updates).catch(e=>showToast(e.message,'error'));
 }
