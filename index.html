@@ -1471,13 +1471,15 @@
           <span class="toggle-label">💧 Include Lady of the Lake</span>
           <div class="toggle-switch" id="create-lady-toggle"></div>
         </div>
-        <div class="toggle-wrap" style="margin-top:8px;">
-          <span class="toggle-label">💀 Include Mordred</span>
-          <div class="toggle-switch" id="create-mordred-toggle"></div>
-        </div>
-        <div class="toggle-wrap" style="margin-top:8px;">
-          <span class="toggle-label">👁️ Include Oberon</span>
-          <div class="toggle-switch" id="create-oberon-toggle"></div>
+        <div id="special-role-toggles" style="display:none;">
+          <div class="toggle-wrap" style="margin-top:8px;">
+            <span class="toggle-label">💀 Include Mordred</span>
+            <div class="toggle-switch" id="create-mordred-toggle"></div>
+          </div>
+          <div class="toggle-wrap" style="margin-top:8px;">
+            <span class="toggle-label">👁️ Include Oberon</span>
+            <div class="toggle-switch" id="create-oberon-toggle"></div>
+          </div>
         </div>
         <!-- Admin-only: Night Phase Mode toggle -->
         <div id="night-phase-toggle-wrap" style="display:none;">
@@ -2669,6 +2671,24 @@ $('create-room-btn').addEventListener('click', createRoom);
 $('create-lady-toggle')?.addEventListener('click', function(){
   this.classList.toggle('on');
 });
+$('create-mordred-toggle')?.addEventListener('click', function(){ this.classList.toggle('on'); });
+$('create-oberon-toggle')?.addEventListener('click',  function(){ this.classList.toggle('on'); });
+
+// Show Mordred/Oberon toggles only when player count >= 8
+function updateSpecialRoleToggles() {
+  const n = parseInt($('player-count-select')?.value) || 5;
+  const wrap = $('special-role-toggles');
+  if(!wrap) return;
+  if(n >= 8) {
+    wrap.style.display = 'block';
+  } else {
+    wrap.style.display = 'none';
+    // Reset so they don't silently carry over into a smaller game
+    $('create-mordred-toggle')?.classList.remove('on');
+    $('create-oberon-toggle')?.classList.remove('on');
+  }
+}
+$('player-count-select')?.addEventListener('change', updateSpecialRoleToggles);
 $('join-room-btn').addEventListener('click', () => {
   const code = $('join-code-input').value.trim().toUpperCase();
   if(!code || code.length<4) { showToast('Enter a valid room code','error'); return; }
@@ -3111,27 +3131,13 @@ function showRolePeekModal(isInitialReveal = false) {
   $('role-peek-align').innerHTML = `<span class="${isGood?'badge-good':'badge-evil'}" style="padding:3px 10px;border-radius:20px;border:1px solid ${isGood?'var(--blue-good-l)':'var(--red-evil-l)'};color:${isGood?'var(--blue-good-l)':'var(--red-evil-l)'};font-size:11px;">${isGood?'⚔️ Good':'🩸 Evil'}</span>`;
   $('role-peek-power').textContent = roleDef.power||'';
 
-  // Knows section inside the flip info panel
-  const knowsEl = $('role-peek-knows');
-  const knowsTxt = $('role-peek-knows-text');
-  if(roleKey==='merlin') {
-    knowsEl.style.display='block';
-    const evilPlayers = _state.players.filter(p=>!isGoodRole(_state.roles[p.id])&&_state.roles[p.id]!=='mordred').map(p=>p.name);
-    knowsTxt.textContent = evilPlayers.length ? evilPlayers.join(', '):'(None visible)';
-  } else if(roleKey==='percival') {
-    knowsEl.style.display='block';
-    const merlinClones = _state.players.filter(p=>['merlin','morgana'].includes(_state.roles[p.id])).map(p=>p.name);
-    knowsTxt.textContent = merlinClones.length ? merlinClones.join(' or '):'(None visible)';
-  } else if(GAME_TEXT_CONFIG.evilRoles.includes(roleKey) && roleKey!=='oberon') {
-    knowsEl.style.display='block';
-    const allies = _state.players.filter(p=>GAME_TEXT_CONFIG.evilRoles.includes(_state.roles[p.id])&&p.id!==_state.players[_state.myIndex].id&&_state.roles[p.id]!=='oberon').map(p=>p.name);
-    knowsTxt.textContent = allies.length ? allies.join(', '):'(You stand alone)';
-  } else {
-    knowsEl.style.display='none';
-  }
+  // "You can see" section removed — the separate intel glow panel covers this
+  $('role-peek-knows').style.display = 'none';
 
   // ── Intel glow panel (Solo mode, initial reveal only) ──────────
+  // Content is prepared now but panel stays HIDDEN until the card is flipped.
   const intelPanel = $('role-intel-panel');
+  let hasIntel = false;
   if(isInitialReveal && !isMod) {
     let label='', names='', cls='good';
     if(roleKey==='merlin') {
@@ -3154,13 +3160,10 @@ function showRolePeekModal(isInitialReveal = false) {
       $('role-intel-label').textContent=label;
       $('role-intel-names').textContent=names;
       $('role-intel-names').className=`role-intel-glow ${cls}`;
-      intelPanel.style.display='block';
-    } else {
-      intelPanel.style.display='none';
+      hasIntel = true;
     }
-  } else {
-    intelPanel.style.display='none';
   }
+  intelPanel.style.display = 'none'; // always hidden until card flips
 
   // ── Moderated mode: confirm / waiting UI ───────────────────────
   const closeBtn     = $('role-peek-close');
@@ -3181,19 +3184,21 @@ function showRolePeekModal(isInitialReveal = false) {
 
   showModal('role-peek-modal');
 
-  // Touch-hold to flip
+  // Touch-hold to flip — intel panel appears with the card reveal, hides when released
   const inner = document.getElementById('role-card-inner');
   let holdTimer=null;
   const startFlip = ()=>{
     holdTimer=setTimeout(()=>{
       inner.classList.add('flipped');
       $('role-peek-info').style.display='block';
+      if(hasIntel) intelPanel.style.display='block';
     },300);
   };
   const endFlip = ()=>{
     clearTimeout(holdTimer);
     inner.classList.remove('flipped');
     $('role-peek-info').style.display='none';
+    if(hasIntel) intelPanel.style.display='none';
   };
   cardWrap.addEventListener('touchstart',startFlip,{passive:true});
   cardWrap.addEventListener('touchend',endFlip,{passive:true});
