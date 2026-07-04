@@ -1733,6 +1733,7 @@
     <div id="vote-result-tally" style="display:flex;gap:16px;justify-content:center;margin:16px 0;"></div>
     <p id="vote-result-desc" style="font-size:12px;color:var(--parchment-dim);margin-bottom:14px;"></p>
     <button id="vote-result-close" class="btn-primary btn-small" style="display:none;">Continue</button>
+    <p id="vote-result-wait-text" style="display:none;font-size:12px;color:var(--parchment-dim);">Waiting for the leader to continue&hellip;</p>
   </div>
 </div>
 
@@ -1894,10 +1895,12 @@
   <div id="disconnect-choice-buttons" style="display:none;gap:10px;flex-wrap:wrap;justify-content:center;margin-bottom:10px;">
     <button id="disconnect-wait-btn" class="btn-primary btn-small" style="min-width:160px;">⏳ Wait for Reconnect</button>
     <button id="disconnect-terminate-btn" class="btn-danger btn-small" style="min-width:160px;">🛑 Terminate Game</button>
+    <p id="disconnect-host-only-note" style="display:none;width:100%;font-size:11px;color:var(--parchment-dim);margin-top:4px;">Only the host can terminate the game.</p>
   </div>
   <div id="disconnect-waiting-note" style="display:none;flex-direction:column;align-items:center;gap:10px;">
     <p style="font-size:11px;color:var(--parchment-dim);">Gameplay is frozen until they return.</p>
     <button id="disconnect-terminate-btn2" class="btn-danger btn-small" style="min-width:160px;">🛑 Terminate Game Instead</button>
+    <p id="disconnect-host-only-note2" style="display:none;font-size:11px;color:var(--parchment-dim);">Only the host can terminate the game.</p>
   </div>
 </div>
 
@@ -3511,6 +3514,11 @@ function processVoteResults() {
   const approveCount=votes.filter(v=>v==='approve').length;
   const rejectCount=votes.filter(v=>v==='reject').length;
   const approved=approveCount>rejectCount;
+  // Only the leader is allowed to advance the game from here. Everyone
+  // else still sees the identical tally, they just don't get a button
+  // that could race with the leader's and double-advance shared state
+  // (e.g. skipping the leader token forward by 2+ seats).
+  const isLeader = _state.myIndex === _state.currentLeader;
 
   // Show result modal
   const title=$('vote-result-title');
@@ -3529,9 +3537,11 @@ function processVoteResults() {
       <div style="font-size:10px;color:var(--parchment-dim);">REJECT</div>
     </div>`;
 
+  $('vote-result-close').style.display = isLeader ? 'block' : 'none';
+  $('vote-result-wait-text').style.display = isLeader ? 'none' : 'block';
+
   if(approved) {
     desc.textContent='The team proceeds to the quest!';
-    $('vote-result-close').style.display='block';
     $('vote-result-close').onclick=()=>{
       hideModal('vote-result-modal');
       _state.voteTrack=0;
@@ -3548,7 +3558,6 @@ function processVoteResults() {
     _state.voteTrack++;
     if(_state.voteTrack>=5) {
       desc.textContent='Five consecutive rejections! Evil wins automatically.';
-      $('vote-result-close').style.display='block';
       $('vote-result-close').onclick=()=>{
         hideModal('vote-result-modal');
         syncRoom({ voteTrack:_state.voteTrack });
@@ -3556,7 +3565,6 @@ function processVoteResults() {
       };
     } else {
       desc.textContent=`Team rejected. Vote track: ${_state.voteTrack}/5. Leadership passes.`;
-      $('vote-result-close').style.display='block';
       $('vote-result-close').onclick=()=>{
         hideModal('vote-result-modal');
         _state.currentLeader=(_state.currentLeader+1)%_state.players.length;
@@ -4655,19 +4663,27 @@ function renderDisconnectAlert(info) {
     return;
   }
 
+  const isHost = _state.isAdmin;
+
   $('disconnect-alert').classList.add('active');
   if(info.status==='waiting') {
     $('disconnect-msg').textContent=`Waiting for ${info.playerName} to reconnect...`;
     $('disconnect-choice-buttons').style.display='none';
     $('disconnect-waiting-note').style.display='flex';
+    // Only the host can end the game early — everyone else just waits.
+    $('disconnect-terminate-btn2').style.display = isHost ? '' : 'none';
+    $('disconnect-host-only-note2').style.display = isHost ? 'none' : 'block';
   } else {
     $('disconnect-msg').textContent=`${info.playerName} has disconnected. Gameplay is frozen. What would you like to do?`;
     $('disconnect-choice-buttons').style.display='flex';
     $('disconnect-waiting-note').style.display='none';
+    $('disconnect-terminate-btn').style.display = isHost ? '' : 'none';
+    $('disconnect-host-only-note').style.display = isHost ? 'none' : 'block';
   }
 }
 
 function terminateGameFromDisconnect() {
+  if(!_state.isAdmin) return; // only the host may terminate the game
   if(!_state.db || !window._firebaseModules || !_state.roomCode) return;
   const { ref, update, remove } = window._firebaseModules;
   // Broadcast terminated phase first so all clients react, then purge the room
