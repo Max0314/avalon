@@ -1760,12 +1760,14 @@
 <div id="quest-reveal-modal" class="modal-backdrop">
   <div class="modal-box" style="text-align:center;">
     <h3 class="modal-title">🎴 Quest Reveal</h3>
-    <p style="font-size:11px;color:var(--parchment-dim);margin-bottom:16px;">Tap each card to reveal. Results are anonymous.</p>
+    <p id="reveal-instructions" style="font-size:11px;color:var(--parchment-dim);margin-bottom:8px;">Tap each card to reveal. Results are anonymous.</p>
+    <p id="reveal-flip-counter" style="font-size:12px;color:var(--parchment-dim);margin-bottom:12px;">0 / 0 cards revealed</p>
     <div id="reveal-cards-row" style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:20px;"></div>
     <div id="reveal-tally" style="display:none;padding:16px;background:rgba(0,0,0,0.3);border-radius:12px;margin-bottom:14px;">
       <p id="reveal-tally-text" style="font-size:18px;font-family:'Cinzel',serif;"></p>
     </div>
     <button id="reveal-continue-btn" class="btn-primary btn-small" style="display:none;">Continue</button>
+    <p id="reveal-wait-text" style="display:none;font-size:12px;color:var(--parchment-dim);">Waiting for the leader to continue&hellip;</p>
   </div>
 </div>
 
@@ -3654,8 +3656,10 @@ function startQuestReveal() {
 
   _state.phase='questReveal';
   _state.questRevealSequence=shuffledCards;
+  _state.questRevealFlips={};
+  _state.questTallyShown=false;
   _state.questRevealOpened=true; // we're opening it ourselves right now
-  syncRoom({ phase:'questReveal', questRevealSequence:shuffledCards });
+  syncRoom({ phase:'questReveal', questRevealSequence:shuffledCards, questRevealFlips:null });
   setNavPhase('Reveal');
   renderQuestBoard();
 
@@ -3669,36 +3673,119 @@ function openQuestRevealModal(sequence) {
   const n       = _state.players.length;
   const qIdx    = _state.questIndex;
   const failsReq= (GAME_TEXT_CONFIG.questFailsRequired[n]||{})[qIdx]||1;
+  const isLeader= _state.myIndex === _state.currentLeader;
+
+  if(!_state.questRevealFlips) _state.questRevealFlips={};
+  _state.questTallyShown=false;
 
   const row=$('reveal-cards-row');
   row.innerHTML='';
-  let revealed=0;
   $('reveal-tally').style.display='none';
   $('reveal-continue-btn').style.display='none';
+  $('reveal-wait-text').style.display='none';
+  updateRevealCounter(sequence.length);
 
-  sequence.forEach((_card,i)=>{
+  // Only the leader can tap cards; everyone else watches them flip live
+  // on their own screen as the leader reveals, and confirms out loud
+  // rather than through any in-app "ready" mechanic.
+  const instrEl=$('reveal-instructions');
+  if(instrEl) {
+    instrEl.textContent = isLeader
+      ? 'Tap each card to reveal. Results are anonymous.'
+      : 'The leader is revealing the cards. Watch here as they flip.';
+  }
+
+  sequence.forEach((card,i)=>{
     const cardEl=document.createElement('div');
     cardEl.className='reveal-card face-down';
     cardEl.textContent='🂠';
-    cardEl.addEventListener('click',()=>{
-      if(!cardEl.classList.contains('face-down')) return;
-      const isSuccess=_card==='success';
-      cardEl.classList.remove('face-down');
-      cardEl.style.background=isSuccess?'rgba(34,197,94,0.15)':'rgba(239,68,68,0.15)';
-      cardEl.style.border=`2px solid ${isSuccess?'var(--success-green)':'var(--fail-red)'}`;
-      cardEl.style.fontSize='36px';
-      cardEl.textContent=isSuccess?'🛡️':'💀';
-      revealed++;
-      if(revealed>=sequence.length) {
-        showQuestTally(sequence, failsReq);
-      }
-    });
+    const alreadyFlipped=!!_state.questRevealFlips[i];
+    if(alreadyFlipped) {
+      flipCardEl(cardEl, card);
+    } else if(isLeader) {
+      cardEl.addEventListener('click',()=>{
+        if(!cardEl.classList.contains('face-down')) return;
+        flipRevealCard(i, card, failsReq);
+      });
+    } else {
+      cardEl.style.cursor='default'; // view-only for non-leaders
+    }
     // Shuffle animation
     cardEl.style.animation=`card-shuffle 0.4s ease ${i*0.1}s`;
     row.appendChild(cardEl);
   });
 
   showModal('quest-reveal-modal');
+
+  // In case we're opening this after some flips already landed (e.g.
+  // rejoining mid-reveal), catch the tally up immediately.
+  maybeShowRevealTally(sequence, failsReq);
+}
+
+// Renders a single card's revealed face. Shared by the player who taps
+// it and by every other client's synced update, so the visuals are
+// always identical no matter who actually clicked.
+function flipCardEl(cardEl, card) {
+  const isSuccess=card==='success';
+  cardEl.classList.remove('face-down');
+  cardEl.style.background=isSuccess?'rgba(34,197,94,0.15)':'rgba(239,68,68,0.15)';
+  cardEl.style.border=`2px solid ${isSuccess?'var(--success-green)':'var(--fail-red)'}`;
+  cardEl.style.fontSize='36px';
+  cardEl.textContent=isSuccess?'🛡️':'💀';
+}
+
+function updateRevealCounter(total) {
+  const flipped=Object.keys(_state.questRevealFlips||{}).length;
+  const el=$('reveal-flip-counter');
+  if(el) el.textContent=`${flipped} / ${total} cards revealed`;
+}
+
+// Called when THIS player taps a face-down card. The flip is broadcast
+// to Firebase so every connected client turns the same card over at the
+// same moment — the whole table watches one shared reveal instead of
+// each device quietly running its own private flip sequence.
+function flipRevealCard(i, card, failsReq) {
+  if(_state.questRevealFlips[i]) return; // already flipped, race-safe no-op
+  _state.questRevealFlips[i]=true;
+
+  const cardEl=$('reveal-cards-row').children[i];
+  if(cardEl) flipCardEl(cardEl, card);
+  updateRevealCounter(_state.questRevealSequence.length);
+
+  syncRoom({ [`questRevealFlips/${i}`]: true });
+
+  maybeShowRevealTally(_state.questRevealSequence, failsReq);
+}
+
+// Picks up cards flipped by OTHER players from the synced Firebase state
+// and reveals them here too, keeping every screen showing the identical
+// set of flipped cards and the identical running counter.
+function syncRevealFlipsFromState() {
+  if(_state.phase!=='questReveal') return;
+  const sequence=_state.questRevealSequence;
+  const row=$('reveal-cards-row');
+  if(!sequence || !sequence.length || !row || !row.children.length) return;
+
+  const n=_state.players.length, qIdx=_state.questIndex;
+  const failsReq=(GAME_TEXT_CONFIG.questFailsRequired[n]||{})[qIdx]||1;
+
+  sequence.forEach((card,i)=>{
+    if(_state.questRevealFlips[i]) {
+      const cardEl=row.children[i];
+      if(cardEl && cardEl.classList.contains('face-down')) flipCardEl(cardEl, card);
+    }
+  });
+  updateRevealCounter(sequence.length);
+  maybeShowRevealTally(sequence, failsReq);
+}
+
+// Shows the tally once ALL cards are flipped — and only once, guarded so
+// simultaneous updates from Firebase can't double-fire it.
+function maybeShowRevealTally(cards, failsReq) {
+  if(_state.questTallyShown) return;
+  if(!cards || Object.keys(_state.questRevealFlips||{}).length < cards.length) return;
+  _state.questTallyShown=true;
+  showQuestTally(cards, failsReq);
 }
 
 function showQuestTally(cards, failsReq) {
@@ -3720,11 +3807,21 @@ function showQuestTally(cards, failsReq) {
     team: teamNames,
   });
 
-  $('reveal-continue-btn').style.display='block';
-  $('reveal-continue-btn').onclick=()=>{
-    hideModal('quest-reveal-modal');
-    resolveQuestResult(isSuccess);
-  };
+  // Everyone has now watched the same cards flip and sees the same
+  // tally. Only the leader can actually advance the game, so we don't
+  // end up with two players racing to trigger the next phase.
+  const isLeader = _state.myIndex === _state.currentLeader;
+  if(isLeader) {
+    $('reveal-continue-btn').style.display='block';
+    $('reveal-wait-text').style.display='none';
+    $('reveal-continue-btn').onclick=()=>{
+      hideModal('quest-reveal-modal');
+      resolveQuestResult(isSuccess);
+    };
+  } else {
+    $('reveal-continue-btn').style.display='none';
+    $('reveal-wait-text').style.display='block';
+  }
   updateHistorySheet();
 }
 
@@ -3768,6 +3865,7 @@ function resolveQuestResult(isSuccess) {
     questVotes:null,
     questResults:_state.questResults,
     questRevealSequence:null,
+    questRevealFlips:null,
   });
   renderTable(); renderQuestBoard(); renderBottomStrip();
 }
@@ -4630,6 +4728,7 @@ function loadGameState(data, fromListener=false) {
   _state.includeOberon  = data.includeOberon||false;
   _state.roles         = data.roles||{};
   _state.questRevealSequence = data.questRevealSequence||[];
+  _state.questRevealFlips    = data.questRevealFlips||{};
   const uid=_state.currentUser?.uid;
   _state.myRole        = _state.roles[uid];
   _state.myIndex       = _state.players.findIndex(p=>p.id===uid)||0;
@@ -4677,10 +4776,18 @@ function setupGameListeners() {
     if(data.phase==='teamVote' && Object.keys(data.questVotes||{}).length===_state.players.length) {
       processVoteResults();
     }
+    // Cards are flipped one at a time and the phase stays 'questReveal'
+    // throughout, so this also must NOT be nested in the "phase changed"
+    // branch below — otherwise only the very first flip would ever
+    // update everyone else's screen.
+    if(data.phase==='questReveal') {
+      syncRevealFlipsFromState();
+    }
     if(data.phase!==prevPhase) {
       // Phase changed — react
       _state.voteResultHandled=false; // new phase started, allow the next vote round to process
       _state.questRevealOpened=false; // new phase started, allow the next reveal to open
+      _state.questTallyShown=false; // new phase started, allow the next tally to show
       _state.questResultHandled=false; // new phase started, allow the next quest to resolve
       if(data.phase==='terminated') {
         $('disconnect-alert').classList.remove('active');
