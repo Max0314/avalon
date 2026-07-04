@@ -1471,13 +1471,15 @@
           <span class="toggle-label">💧 Include Lady of the Lake</span>
           <div class="toggle-switch" id="create-lady-toggle"></div>
         </div>
-        <div class="toggle-wrap" style="margin-top:8px;">
-          <span class="toggle-label">💀 Include Mordred</span>
-          <div class="toggle-switch" id="create-mordred-toggle"></div>
-        </div>
-        <div class="toggle-wrap" style="margin-top:8px;">
-          <span class="toggle-label">👁️ Include Oberon</span>
-          <div class="toggle-switch" id="create-oberon-toggle"></div>
+        <div id="special-role-toggles" style="display:none;">
+          <div class="toggle-wrap" style="margin-top:8px;">
+            <span class="toggle-label">💀 Include Mordred</span>
+            <div class="toggle-switch" id="create-mordred-toggle"></div>
+          </div>
+          <div class="toggle-wrap" style="margin-top:8px;">
+            <span class="toggle-label">👁️ Include Oberon</span>
+            <div class="toggle-switch" id="create-oberon-toggle"></div>
+          </div>
         </div>
         <!-- Admin-only: Night Phase Mode toggle -->
         <div id="night-phase-toggle-wrap" style="display:none;">
@@ -2669,6 +2671,24 @@ $('create-room-btn').addEventListener('click', createRoom);
 $('create-lady-toggle')?.addEventListener('click', function(){
   this.classList.toggle('on');
 });
+$('create-mordred-toggle')?.addEventListener('click', function(){ this.classList.toggle('on'); });
+$('create-oberon-toggle')?.addEventListener('click',  function(){ this.classList.toggle('on'); });
+
+// Show Mordred/Oberon toggles only when player count >= 8
+function updateSpecialRoleToggles() {
+  const n = parseInt($('player-count-select')?.value) || 5;
+  const wrap = $('special-role-toggles');
+  if(!wrap) return;
+  if(n >= 8) {
+    wrap.style.display = 'block';
+  } else {
+    wrap.style.display = 'none';
+    // Reset so they don't silently carry over into a smaller game
+    $('create-mordred-toggle')?.classList.remove('on');
+    $('create-oberon-toggle')?.classList.remove('on');
+  }
+}
+$('player-count-select')?.addEventListener('change', updateSpecialRoleToggles);
 $('join-room-btn').addEventListener('click', () => {
   const code = $('join-code-input').value.trim().toUpperCase();
   if(!code || code.length<4) { showToast('Enter a valid room code','error'); return; }
@@ -2825,7 +2845,7 @@ function demoBotAll() {
         _state.questCards[p.id] = isGoodRole(rk) ? 'success' : (Math.random()>0.2?'fail':'success');
       }
     });
-    if(allQuestCardsIn()) triggerQuestReveal();
+    if(allQuestCardsIn()) startQuestReveal();
   }
 }
 /* === END DEMO SANDBOX ZONE === */
@@ -3111,27 +3131,13 @@ function showRolePeekModal(isInitialReveal = false) {
   $('role-peek-align').innerHTML = `<span class="${isGood?'badge-good':'badge-evil'}" style="padding:3px 10px;border-radius:20px;border:1px solid ${isGood?'var(--blue-good-l)':'var(--red-evil-l)'};color:${isGood?'var(--blue-good-l)':'var(--red-evil-l)'};font-size:11px;">${isGood?'⚔️ Good':'🩸 Evil'}</span>`;
   $('role-peek-power').textContent = roleDef.power||'';
 
-  // Knows section inside the flip info panel
-  const knowsEl = $('role-peek-knows');
-  const knowsTxt = $('role-peek-knows-text');
-  if(roleKey==='merlin') {
-    knowsEl.style.display='block';
-    const evilPlayers = _state.players.filter(p=>!isGoodRole(_state.roles[p.id])&&_state.roles[p.id]!=='mordred').map(p=>p.name);
-    knowsTxt.textContent = evilPlayers.length ? evilPlayers.join(', '):'(None visible)';
-  } else if(roleKey==='percival') {
-    knowsEl.style.display='block';
-    const merlinClones = _state.players.filter(p=>['merlin','morgana'].includes(_state.roles[p.id])).map(p=>p.name);
-    knowsTxt.textContent = merlinClones.length ? merlinClones.join(' or '):'(None visible)';
-  } else if(GAME_TEXT_CONFIG.evilRoles.includes(roleKey) && roleKey!=='oberon') {
-    knowsEl.style.display='block';
-    const allies = _state.players.filter(p=>GAME_TEXT_CONFIG.evilRoles.includes(_state.roles[p.id])&&p.id!==_state.players[_state.myIndex].id&&_state.roles[p.id]!=='oberon').map(p=>p.name);
-    knowsTxt.textContent = allies.length ? allies.join(', '):'(You stand alone)';
-  } else {
-    knowsEl.style.display='none';
-  }
+  // "You can see" section removed — the separate intel glow panel covers this
+  $('role-peek-knows').style.display = 'none';
 
   // ── Intel glow panel (Solo mode, initial reveal only) ──────────
+  // Content is prepared now but panel stays HIDDEN until the card is flipped.
   const intelPanel = $('role-intel-panel');
+  let hasIntel = false;
   if(isInitialReveal && !isMod) {
     let label='', names='', cls='good';
     if(roleKey==='merlin') {
@@ -3154,13 +3160,10 @@ function showRolePeekModal(isInitialReveal = false) {
       $('role-intel-label').textContent=label;
       $('role-intel-names').textContent=names;
       $('role-intel-names').className=`role-intel-glow ${cls}`;
-      intelPanel.style.display='block';
-    } else {
-      intelPanel.style.display='none';
+      hasIntel = true;
     }
-  } else {
-    intelPanel.style.display='none';
   }
+  intelPanel.style.display = 'none'; // always hidden until card flips
 
   // ── Moderated mode: confirm / waiting UI ───────────────────────
   const closeBtn     = $('role-peek-close');
@@ -3181,19 +3184,21 @@ function showRolePeekModal(isInitialReveal = false) {
 
   showModal('role-peek-modal');
 
-  // Touch-hold to flip
+  // Touch-hold to flip — intel panel appears with the card reveal, hides when released
   const inner = document.getElementById('role-card-inner');
   let holdTimer=null;
   const startFlip = ()=>{
     holdTimer=setTimeout(()=>{
       inner.classList.add('flipped');
       $('role-peek-info').style.display='block';
+      if(hasIntel) intelPanel.style.display='block';
     },300);
   };
   const endFlip = ()=>{
     clearTimeout(holdTimer);
     inner.classList.remove('flipped');
     $('role-peek-info').style.display='none';
+    if(hasIntel) intelPanel.style.display='none';
   };
   cardWrap.addEventListener('touchstart',startFlip,{passive:true});
   cardWrap.addEventListener('touchend',endFlip,{passive:true});
@@ -3361,7 +3366,7 @@ function renderBottomStrip() {
             const rb=document.createElement('button');
             rb.className='btn-primary';
             rb.textContent='🎴 Reveal Cards';
-            rb.onclick=triggerQuestReveal;
+            rb.onclick=startQuestReveal;
             actionsDiv.appendChild(rb);
           }
         }
@@ -3458,17 +3463,25 @@ $('nomination-confirm-btn')?.addEventListener('click',()=>{
 });
 $('nomination-cancel-btn')?.addEventListener('click',()=>hideModal('nomination-modal'));
 
+// Push a partial state update to the shared Firebase room so every
+// connected client's onValue listener picks it up. No-op in demo mode.
+function syncRoom(fields) {
+  if(DEMO_MODE_ACTIVE || !_state.db || !window._firebaseModules) return;
+  const { ref, update } = window._firebaseModules;
+  const payload={};
+  Object.keys(fields).forEach(k=>{ payload[`rooms/${_state.roomCode}/${k}`]=fields[k]; });
+  update(ref(_state.db), payload);
+}
+
 function advanceToVote() {
   _state.phase='teamVote';
   _state.questVotes={};
-  if(!DEMO_MODE_ACTIVE && _state.db && window._firebaseModules) {
-    const { ref, update } = window._firebaseModules;
-    update(ref(_state.db), {
-      [`rooms/${_state.roomCode}/phase`]:'teamVote',
-      [`rooms/${_state.roomCode}/selectedTeam`]:_state.selectedTeam,
-      [`rooms/${_state.roomCode}/questVotes`]:null,
-    });
-  }
+  _state.voteResultHandled=false;
+  syncRoom({
+    phase:'teamVote',
+    selectedTeam:_state.selectedTeam,
+    questVotes:null,
+  });
   renderTable(); renderQuestBoard(); renderBottomStrip(); setNavPhase('Team Vote');
 }
 
@@ -3490,6 +3503,8 @@ function submitTeamVote(choice) {
 }
 
 function processVoteResults() {
+  if(_state.voteResultHandled) return; // guard against duplicate calls (see setupGameListeners)
+  _state.voteResultHandled=true;
   const votes=Object.values(_state.questVotes);
   const approveCount=votes.filter(v=>v==='approve').length;
   const rejectCount=votes.filter(v=>v==='reject').length;
@@ -3520,6 +3535,11 @@ function processVoteResults() {
       _state.voteTrack=0;
       _state.phase='quest';
       _state.questCards={};
+      // Without this write, the phase change only happens on this one
+      // device — every other client's next Firebase snapshot still says
+      // 'teamVote' and overwrites their local phase back, which is why
+      // the players on the quest team could never open their action card.
+      syncRoom({ phase:'quest', voteTrack:0, questCards:null, questRevealSequence:null });
       renderTable(); renderQuestBoard(); renderBottomStrip(); setNavPhase('Quest');
     };
   } else {
@@ -3527,7 +3547,11 @@ function processVoteResults() {
     if(_state.voteTrack>=5) {
       desc.textContent='Five consecutive rejections! Evil wins automatically.';
       $('vote-result-close').style.display='block';
-      $('vote-result-close').onclick=()=>{ hideModal('vote-result-modal'); endGame('evil'); };
+      $('vote-result-close').onclick=()=>{
+        hideModal('vote-result-modal');
+        syncRoom({ voteTrack:_state.voteTrack });
+        endGame('evil');
+      };
     } else {
       desc.textContent=`Team rejected. Vote track: ${_state.voteTrack}/5. Leadership passes.`;
       $('vote-result-close').style.display='block';
@@ -3536,6 +3560,13 @@ function processVoteResults() {
         _state.currentLeader=(_state.currentLeader+1)%_state.players.length;
         _state.selectedTeam=[];
         _state.phase='nominate';
+        syncRoom({
+          phase:'nominate',
+          currentLeader:_state.currentLeader,
+          selectedTeam:null,
+          voteTrack:_state.voteTrack,
+          questVotes:null,
+        });
         renderTable(); renderQuestBoard(); renderBottomStrip(); setNavPhase('Nomination');
       };
     }
@@ -3604,7 +3635,7 @@ function submitQuestCard(choice) {
     update(ref(_state.db),{[`rooms/${_state.roomCode}/questCards/${me.id}`]:choice});
   }
   renderBottomStrip();
-  if(DEMO_MODE_ACTIVE && allQuestCardsIn()) triggerQuestReveal();
+  if(DEMO_MODE_ACTIVE && allQuestCardsIn()) startQuestReveal();
 }
 
 function allQuestCardsIn() {
@@ -3614,17 +3645,30 @@ function allQuestCardsIn() {
 /* ════════════════════════════════════════════════════════════════
    QUEST REVEAL
 ════════════════════════════════════════════════════════════════ */
-function triggerQuestReveal() {
+// Called by whichever client taps "Reveal Cards" (the leader, or the demo
+// bot-runner). Shuffles the real card values once, syncs that exact
+// sequence to Firebase, and opens the reveal modal locally right away.
+function startQuestReveal() {
+  const cards=_state.selectedTeam.map(ti=>_state.questCards[_state.players[ti].id]);
+  const shuffledCards=shuffle(cards);
+
   _state.phase='questReveal';
+  _state.questRevealSequence=shuffledCards;
+  _state.questRevealOpened=true; // we're opening it ourselves right now
+  syncRoom({ phase:'questReveal', questRevealSequence:shuffledCards });
   setNavPhase('Reveal');
   renderQuestBoard();
 
+  openQuestRevealModal(shuffledCards);
+}
+
+// Builds and shows the card-flip modal from an already-agreed-upon card
+// sequence, so every client — not just whoever triggered the reveal —
+// flips the same cards in the same order and reaches the same tally.
+function openQuestRevealModal(sequence) {
   const n       = _state.players.length;
   const qIdx    = _state.questIndex;
   const failsReq= (GAME_TEXT_CONFIG.questFailsRequired[n]||{})[qIdx]||1;
-
-  const cards=_state.selectedTeam.map(ti=>_state.questCards[_state.players[ti].id]);
-  const shuffledCards=shuffle(cards);
 
   const row=$('reveal-cards-row');
   row.innerHTML='';
@@ -3632,7 +3676,7 @@ function triggerQuestReveal() {
   $('reveal-tally').style.display='none';
   $('reveal-continue-btn').style.display='none';
 
-  shuffledCards.forEach((_card,i)=>{
+  sequence.forEach((_card,i)=>{
     const cardEl=document.createElement('div');
     cardEl.className='reveal-card face-down';
     cardEl.textContent='🂠';
@@ -3645,8 +3689,8 @@ function triggerQuestReveal() {
       cardEl.style.fontSize='36px';
       cardEl.textContent=isSuccess?'🛡️':'💀';
       revealed++;
-      if(revealed>=shuffledCards.length) {
-        showQuestTally(cards, failsReq);
+      if(revealed>=sequence.length) {
+        showQuestTally(sequence, failsReq);
       }
     });
     // Shuffle animation
@@ -3685,12 +3729,15 @@ function showQuestTally(cards, failsReq) {
 }
 
 function resolveQuestResult(isSuccess) {
+  if(_state.questResultHandled) return; // guard against duplicate calls (e.g. a double-tap on Continue)
+  _state.questResultHandled=true;
   _state.questResults[_state.questIndex]=isSuccess?'success':'fail';
   const successes=_state.questResults.filter(r=>r==='success').length;
   const fails=_state.questResults.filter(r=>r==='fail').length;
 
-  if(fails>=3) { endGame('evil'); return; }
+  if(fails>=3) { syncRoom({ questResults:_state.questResults }); endGame('evil'); return; }
   if(successes>=3) {
+    syncRoom({ questResults:_state.questResults });
     // Check for assassin phase
     const assassinExists=_state.players.some(p=>_state.roles[p.id]==='assassin');
     if(assassinExists) { startAssassinPhase(); return; }
@@ -3711,6 +3758,17 @@ function resolveQuestResult(isSuccess) {
     _state.phase='nominate';
     setNavPhase('Nomination');
   }
+  syncRoom({
+    phase:_state.phase,
+    questIndex:_state.questIndex,
+    currentLeader:_state.currentLeader,
+    selectedTeam:null,
+    voteTrack:0,
+    questCards:null,
+    questVotes:null,
+    questResults:_state.questResults,
+    questRevealSequence:null,
+  });
   renderTable(); renderQuestBoard(); renderBottomStrip();
 }
 
@@ -3867,6 +3925,7 @@ $('lady-broadcast-btn')?.addEventListener('click', ()=>{
 ════════════════════════════════════════════════════════════════ */
 function startAssassinPhase() {
   _state.phase='assassin';
+  syncRoom({ phase:'assassin' });
   renderTable(); renderQuestBoard(); renderBottomStrip(); setNavPhase('Assassin');
 }
 
@@ -3906,6 +3965,12 @@ function showAssassinModal() {
 function endGame(result) {
   _state.phase='end';
   _state.gameListenerActive = false; // allow re-registration in the next game session
+  // Broadcast the result so every other client's listener also calls
+  // endGame(data.result) — otherwise only whoever triggered the ending
+  // (e.g. the assassin) would see the reveal screen. 'terminated' already
+  // has its own dedicated phase write elsewhere, so skip it here to avoid
+  // clobbering that phase value.
+  if(result!=='terminated') syncRoom({ phase:'end', result });
   const overlay=$('endgame-overlay');
   const icon=$('endgame-icon');
   const title=$('endgame-title');
@@ -4564,6 +4629,7 @@ function loadGameState(data, fromListener=false) {
   _state.includeMordred = data.includeMordred||false;
   _state.includeOberon  = data.includeOberon||false;
   _state.roles         = data.roles||{};
+  _state.questRevealSequence = data.questRevealSequence||[];
   const uid=_state.currentUser?.uid;
   _state.myRole        = _state.roles[uid];
   _state.myIndex       = _state.players.findIndex(p=>p.id===uid)||0;
@@ -4603,15 +4669,34 @@ function setupGameListeners() {
     if(_state.nightPhaseMode==='moderated' && _state.phase==='roleReveal' && _state.isAdmin) {
       updateModeratorPanel();
     }
+    // Check whether the vote tally just completed. This must NOT be
+    // nested inside the "phase changed" branch below: the phase stays
+    // 'teamVote' the whole time votes trickle in one-by-one, so gating
+    // this on a phase change meant it only ever fired (by luck) on the
+    // very first vote and never again once the last vote actually came in.
+    if(data.phase==='teamVote' && Object.keys(data.questVotes||{}).length===_state.players.length) {
+      processVoteResults();
+    }
     if(data.phase!==prevPhase) {
       // Phase changed — react
-      if(data.phase==='teamVote' && Object.keys(data.questVotes||{}).length===_state.players.length) {
-        processVoteResults();
-      }
+      _state.voteResultHandled=false; // new phase started, allow the next vote round to process
+      _state.questRevealOpened=false; // new phase started, allow the next reveal to open
+      _state.questResultHandled=false; // new phase started, allow the next quest to resolve
       if(data.phase==='terminated') {
         $('disconnect-alert').classList.remove('active');
         hideModal('reconnect-modal');
         endGame('terminated');
+      }
+      if(data.phase==='end' && data.result) {
+        endGame(data.result);
+      }
+      // Someone else (the leader) started the quest reveal — open the
+      // same synced card sequence here so everyone sees the identical
+      // flip-and-tally moment instead of just the leader's own device.
+      if(data.phase==='questReveal' && !_state.questRevealOpened &&
+         Array.isArray(data.questRevealSequence) && data.questRevealSequence.length) {
+        _state.questRevealOpened=true;
+        openQuestRevealModal(data.questRevealSequence);
       }
     }
   });
