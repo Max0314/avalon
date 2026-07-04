@@ -947,6 +947,19 @@
       100% { transform: translateY(110vh) rotate(720deg); opacity:0; }
     }
 
+    /* Solo (no-moderator) Night Phase overlay */
+    #solo-night-overlay {
+      position: fixed; inset: 0;
+      background: #000;
+      z-index: 9986;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 32px; text-align: center;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.6s;
+    }
+    #solo-night-overlay.active { opacity: 1; pointer-events: all; }
+
     /* End game overlay */
     #endgame-overlay {
       position: fixed; inset: 0;
@@ -1684,7 +1697,7 @@
     <div id="role-peek-waiting-wrap" style="display:none;margin-bottom:14px;padding:18px;background:rgba(0,0,0,0.3);border-radius:12px;border:1px solid var(--gold-dim);">
       <p style="font-size:26px;margin-bottom:8px;">😴</p>
       <p style="font-family:'Cinzel',serif;font-size:13px;color:var(--gold);letter-spacing:1.5px;margin-bottom:8px;">Close Your Eyes</p>
-      <p style="font-size:11px;color:var(--parchment-dim);line-height:1.5;">Wait for the Moderator to begin the Night Phase.</p>
+      <p id="role-peek-waiting-subtext" style="font-size:11px;color:var(--parchment-dim);line-height:1.5;">Wait for the Moderator to begin the Night Phase.</p>
     </div>
     <button id="role-peek-close" class="btn-primary">I Understand My Mission</button>
   </div>
@@ -1930,6 +1943,21 @@
   <button id="endgame-lobby-btn" class="btn-primary" style="max-width:260px;">Return to Lobby</button>
 </div>
 <div id="confetti-overlay"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     NIGHT PHASE OVERLAY (No-Moderator / Solo mode) — shown to
+     everyone once all players have confirmed seeing their role.
+═══════════════════════════════════════════════════════════════ -->
+<div id="solo-night-overlay">
+  <div style="font-size:44px;margin-bottom:16px;">🌙</div>
+  <h2 class="font-cinzel" style="color:var(--gold);font-size:clamp(18px,6vw,26px);letter-spacing:2px;margin-bottom:12px;">NIGHT PHASE</h2>
+  <p style="color:var(--parchment-dim);font-size:13px;line-height:1.6;max-width:320px;margin-bottom:6px;">Close your eyes and stay quiet — wait for the spoken instructions.</p>
+  <p id="solo-night-nonhost-note" style="color:var(--gold-dim);font-size:11px;font-family:'Cinzel',serif;letter-spacing:0.5px;">The host will begin the Quest shortly&hellip;</p>
+  <div id="solo-night-host-controls" style="display:none;flex-direction:column;gap:10px;width:100%;max-width:260px;margin-top:24px;">
+    <button id="solo-night-start-btn" class="btn-primary">⚔️ Start Game</button>
+    <button id="solo-night-reshuffle-btn" class="btn-secondary btn-small">🔀 Reshuffle Roles</button>
+  </div>
+</div>
 
 <!-- ═══════════════════════════════════════════════════════════════
      MODAL: Moderated Night Phase — Moderator View
@@ -2882,7 +2910,12 @@ function enterStagingScreen(code, isHost) {
   const unsub = onValue(rRef, snap=>{
     const data = snap.val();
     if(!data) return;
-    if(data.phase !== 'staging') { loadGameState(data); return; }
+    // Once the game leaves staging, hand off to setupGameListeners()'s own
+    // subscription and detach this one — otherwise it keeps firing
+    // loadGameState(fromListener=false) on every future update, which
+    // re-runs enterGameScreen() (and re-pops modals) on every single vote,
+    // quest card, or role confirmation for the rest of the match.
+    if(data.phase !== 'staging') { unsub(); loadGameState(data); return; }
     const players = Object.entries(data.players||{}).map(([id,p],i)=>({id,...p,isLocal:id===_state.currentUser?.uid,isHost:data.hostId===id}));
     _state.players = players;
     renderStagingPlayers();
@@ -2994,9 +3027,16 @@ function enterGameScreen() {
       // Moderator sees all roles + confirm counter instead of their own card
       setTimeout(showModeratorNightPanel, 500);
     } else {
+      // Demo mode has no real other players to click "confirm" themselves,
+      // so bots auto-confirm instantly and only the local seat is waited on.
+      if(DEMO_MODE_ACTIVE && _state.nightPhaseMode === 'solo') {
+        _state.players.forEach(p => { if(!p.isLocal) _state.roleConfirms[p.id] = true; });
+      }
       // All players (and admin in solo mode) see their own role card
       setTimeout(() => showRolePeekModal(true), 500);
     }
+  } else if(_state.phase === 'nightPhase') {
+    showSoloNightOverlay();
   }
   setupGameListeners();
 }
@@ -3099,7 +3139,7 @@ function renderQuestBoard() {
     track.innerHTML+=`<div class="vote-pip ${i<_state.voteTrack?'active':''}"></div>`;
   }
 
-  const phaseNames={roleReveal:'Role Reveal',nominate:'Nomination',teamVote:'Vote',quest:'Quest',questReveal:'Reveal',lady:'Lady',assassin:'Assassin'};
+  const phaseNames={roleReveal:'Role Reveal',nightPhase:'Night Phase',nominate:'Nomination',teamVote:'Vote',quest:'Quest',questReveal:'Reveal',lady:'Lady',assassin:'Assassin'};
   $('board-phase-text').textContent = phaseNames[_state.phase]||'';
 }
 
@@ -3170,15 +3210,18 @@ function showRolePeekModal(isInitialReveal = false) {
   }
   intelPanel.style.display = 'none'; // always hidden until card flips
 
-  // ── Moderated mode: confirm / waiting UI ───────────────────────
+  // ── Initial reveal: confirm / waiting UI (Solo AND Moderated) ──
   const closeBtn     = $('role-peek-close');
   const confirmWrap  = $('role-peek-confirm-wrap');
   const waitingWrap  = $('role-peek-waiting-wrap');
-  if(isInitialReveal && isMod) {
+  if(isInitialReveal) {
     closeBtn.style.display='none';
     confirmWrap.style.display='block';
     waitingWrap.style.display='none';
     $('role-peek-instruction').textContent='Touch and hold the card to reveal your role, then confirm below.';
+    $('role-peek-waiting-subtext').textContent = isMod
+      ? 'Wait for the Moderator to begin the Night Phase.'
+      : 'Waiting for everyone else at the table to see their role\u2026';
   } else {
     closeBtn.style.display='block';
     closeBtn.textContent='I Understand My Mission';
@@ -3237,8 +3280,81 @@ function confirmRoleSeen() {
   } else {
     // Demo mode: just mark locally and update panel
     _state.roleConfirms[uid] = true;
+    checkNightPhaseAdvance();
   }
 }
+
+// Solo (no-moderator) mode: once every player has confirmed seeing their
+// role, the table goes dark together — no one has to wait on a human mod.
+function checkNightPhaseAdvance() {
+  if(_state.nightPhaseMode !== 'solo' || _state.phase !== 'roleReveal') return;
+  const total = _state.players.length;
+  if(total === 0) return;
+  const confirms = _state.roleConfirms || {};
+  const count = _state.players.filter(p => confirms[p.id]).length;
+  if(count < total) return;
+
+  if(DEMO_MODE_ACTIVE) {
+    hideModal('role-peek-modal');
+    _state.phase = 'nightPhase';
+    showSoloNightOverlay();
+    return;
+  }
+  // Live: only the host writes the phase transition, so every client
+  // isn't racing to push the same update.
+  if(_state.players[_state.myIndex]?.isHost && _state.db && window._firebaseModules && _state.roomCode) {
+    const { ref, update } = window._firebaseModules;
+    update(ref(_state.db), { [`rooms/${_state.roomCode}/phase`]: 'nightPhase' }).catch(()=>{});
+  }
+}
+
+function showSoloNightOverlay() {
+  const isHost = !!_state.players[_state.myIndex]?.isHost;
+  $('solo-night-host-controls').style.display = isHost ? 'flex' : 'none';
+  $('solo-night-nonhost-note').style.display  = isHost ? 'none' : 'block';
+  $('solo-night-overlay').classList.add('active');
+}
+function hideSoloNightOverlay() {
+  $('solo-night-overlay').classList.remove('active');
+}
+
+$('solo-night-start-btn')?.addEventListener('click', ()=>{
+  if(DEMO_MODE_ACTIVE) {
+    hideSoloNightOverlay();
+    _state.phase = 'nominate';
+    _state.roleConfirms = {};
+    renderTable(); renderQuestBoard(); renderBottomStrip(); setNavPhase('Nomination');
+    return;
+  }
+  if(!_state.db || !window._firebaseModules || !_state.roomCode) return;
+  const { ref, update } = window._firebaseModules;
+  update(ref(_state.db), {
+    [`rooms/${_state.roomCode}/phase`]: 'nominate',
+    [`rooms/${_state.roomCode}/roleConfirms`]: null,
+  }).catch(e=>showToast(e.message,'error'));
+});
+
+$('solo-night-reshuffle-btn')?.addEventListener('click', ()=>{
+  const roles = buildRoleSet(_state.players.length);
+  _state.players.forEach((p,i)=>{ _state.roles[p.id] = roles[i]; });
+
+  if(DEMO_MODE_ACTIVE) {
+    hideSoloNightOverlay();
+    _state.roleConfirms = {};
+    _state.phase = 'roleReveal';
+    _state.myRole = _state.roles[_state.players[_state.myIndex].id];
+    enterGameScreen();
+    return;
+  }
+  if(!_state.db || !window._firebaseModules || !_state.roomCode) return;
+  const { ref, update } = window._firebaseModules;
+  const updates = {
+    [`rooms/${_state.roomCode}/phase`]: 'roleReveal',
+    [`rooms/${_state.roomCode}/roleConfirms`]: null,
+  };
+  _state.players.forEach((p,i)=>{ updates[`rooms/${_state.roomCode}/roles/${p.id}`] = roles[i]; });
+  update(ref(_state.db), updates).catch(e=>showToast(e.message,'error'));
+});
 
 $('role-peek-confirm-btn')?.addEventListener('click', confirmRoleSeen);
 
@@ -3303,10 +3419,10 @@ function renderBottomStrip() {
   actionsDiv.innerHTML='';
 
   const roleFab = $('role-peek-fab');
-  if(roleFab) roleFab.style.display = (_state.myRole && _state.phase!=='roleReveal' && _state.phase!=='end') ? 'flex' : 'none';
+  if(roleFab) roleFab.style.display = (_state.myRole && _state.phase!=='roleReveal' && _state.phase!=='nightPhase' && _state.phase!=='end') ? 'flex' : 'none';
 
   const guideFab = $('guide-fab');
-  if(guideFab) guideFab.style.display = (_state.phase!=='roleReveal' && _state.phase!=='end') ? 'flex' : 'none';
+  if(guideFab) guideFab.style.display = (_state.phase!=='roleReveal' && _state.phase!=='nightPhase' && _state.phase!=='end') ? 'flex' : 'none';
 
   const me      = _state.players[_state.myIndex];
   const isLeader= _state.myIndex === _state.currentLeader;
@@ -4784,6 +4900,10 @@ function setupGameListeners() {
     if(_state.nightPhaseMode==='moderated' && _state.phase==='roleReveal' && _state.isAdmin) {
       updateModeratorPanel();
     }
+    // Solo (no-moderator) mode: check whether everyone has now confirmed
+    if(_state.nightPhaseMode==='solo' && _state.phase==='roleReveal') {
+      checkNightPhaseAdvance();
+    }
     // Check whether the vote tally just completed. This must NOT be
     // nested inside the "phase changed" branch below: the phase stays
     // 'teamVote' the whole time votes trickle in one-by-one, so gating
@@ -4812,6 +4932,31 @@ function setupGameListeners() {
       }
       if(data.phase==='end' && data.result) {
         endGame(data.result);
+      }
+      // Leaving the role-reveal step for any reason — close any lingering
+      // role-peek / moderator-night modals so they don't get stuck open
+      // on a waiting player's screen.
+      if(prevPhase==='roleReveal' && data.phase!=='roleReveal') {
+        hideModal('role-peek-modal');
+        hideModal('moderated-night-modal');
+      }
+      // Everyone has confirmed their role — table goes dark together.
+      if(data.phase==='nightPhase') {
+        showSoloNightOverlay();
+      }
+      // Host started the game (or ended the night phase some other way).
+      if(prevPhase==='nightPhase' && data.phase!=='nightPhase') {
+        hideSoloNightOverlay();
+      }
+      // Fresh role reveal — either the very first one, or the host hit
+      // "Reshuffle Roles" from the night-phase overlay. Show the card again.
+      if(data.phase==='roleReveal' && prevPhase!=='roleReveal') {
+        hideSoloNightOverlay();
+        if(_state.nightPhaseMode==='moderated' && _state.isAdmin) {
+          setTimeout(showModeratorNightPanel, 300);
+        } else {
+          setTimeout(() => showRolePeekModal(true), 300);
+        }
       }
       // Someone else (the leader) started the quest reveal — open the
       // same synced card sequence here so everyone sees the identical
