@@ -33,6 +33,8 @@
 
   <!-- QRCode library for room codes -->
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <!-- jsQR library for scanning QR codes from the camera (offline P2P pairing) -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 
   <!-- Firebase SDK -->
   <script type="module">
@@ -1480,6 +1482,11 @@
           </select>
         </div>
         <button id="create-room-btn" class="btn-primary">⚔️ Create Room</button>
+        <button id="resume-offline-btn" class="btn-secondary btn-small" style="display:none;width:100%;margin-top:10px;">↺ Resume Previous Offline Game</button>
+        <div class="toggle-wrap" style="margin-top:12px;">
+          <span class="toggle-label">📡 Offline Mode (same WiFi, no internet)</span>
+          <div class="toggle-switch" id="create-offline-toggle"></div>
+        </div>
         <div class="toggle-wrap" style="margin-top:12px;">
           <span class="toggle-label">💧 Include Lady of the Lake</span>
           <div class="toggle-switch" id="create-lady-toggle"></div>
@@ -1511,6 +1518,7 @@
           <input id="join-code-input" class="input-field" type="text" maxlength="6" placeholder="Room Code" style="flex:1;text-transform:uppercase;font-size:18px;letter-spacing:4px;text-align:center;font-family:'Cinzel',serif;" autocomplete="off" />
           <button id="join-room-btn" class="btn-primary" style="width:auto;padding:0 22px;font-size:15px;">Join</button>
         </div>
+        <button id="join-offline-btn" class="btn-secondary btn-small" style="margin-top:10px;width:100%;">📷 Join Offline Game (Scan QR)</button>
       </div>
 
       <!-- Available Rooms -->
@@ -1550,7 +1558,30 @@
         <div id="seat-order-list" style="display:flex;flex-direction:column;"></div>
       </div>
       <div id="staging-host-controls" style="display:none;">
+        <button id="staging-add-player-offline-btn" class="btn-secondary btn-small" style="display:none;width:100%;margin-bottom:10px;">📷 Add Player via QR</button>
         <button id="start-game-btn" class="btn-primary" style="display:none;">⚔️ Begin Quest</button>
+      </div>
+    </section>
+
+    <!-- ── SCREEN: Offline Join (scan host QR / show answer QR) ── -->
+    <section id="screen-offline-join" class="screen" style="overflow-y:auto;padding:12px 14px 24px;">
+      <div style="background:var(--bg-card);border:1px solid rgba(212,175,55,0.3);border-radius:16px;padding:18px;text-align:center;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+          <button id="offline-join-back-btn" style="background:none;border:none;cursor:pointer;padding:6px;margin:-6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;-webkit-tap-highlight-color:transparent;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </button>
+          <p class="font-cinzel-sm" style="color:var(--gold);font-size:13px;letter-spacing:1px;flex:1;margin:0;">📷 JOIN OFFLINE GAME</p>
+          <span style="width:36px;flex-shrink:0;"></span>
+        </div>
+        <div id="offline-join-scan-wrap">
+          <p style="font-size:12px;color:var(--parchment-dim);margin-bottom:10px;">Point your camera at the host's connection code.</p>
+          <video id="offline-join-scan-video" style="width:100%;border-radius:10px;background:#000;" muted></video>
+        </div>
+        <div id="offline-join-answer-wrap" style="display:none;">
+          <p style="font-size:12px;color:var(--parchment-dim);margin-bottom:10px;">Now show this code back to the host to finish connecting.</p>
+          <canvas id="offline-join-answer-qr" width="220" height="220" style="border-radius:10px;margin:0 auto;display:block;"></canvas>
+          <p style="font-size:11px;color:var(--parchment-dim);margin-top:10px;">Waiting for host to scan and confirm…</p>
+        </div>
       </div>
     </section>
 
@@ -1904,6 +1935,27 @@
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════
+     OFFLINE PAIRING MODAL (host side)
+═══════════════════════════════════════════════════════════════ -->
+<div id="offline-pair-modal" class="modal-backdrop">
+  <div class="modal-box" style="text-align:center;">
+    <h3 class="modal-title">📡 Pair a Player</h3>
+    <div id="offline-pair-step1">
+      <p style="font-size:12px;color:var(--parchment-dim);margin-bottom:12px;">Have the joining player scan this code from the "Join Offline Game" screen.</p>
+      <canvas id="offline-pair-qr" width="220" height="220" style="border-radius:10px;margin:0 auto 12px;display:block;"></canvas>
+      <p id="offline-pair-status" style="font-size:11px;color:var(--parchment-dim);margin-bottom:14px;"></p>
+      <button id="offline-pair-next-btn" class="btn-primary btn-small" style="min-width:180px;">I Have Their Code →</button>
+    </div>
+    <div id="offline-pair-step2" style="display:none;">
+      <p style="font-size:12px;color:var(--parchment-dim);margin-bottom:10px;">Now scan the code shown on their screen.</p>
+      <video id="offline-pair-scan-video" style="width:100%;border-radius:10px;background:#000;" muted></video>
+      <p id="offline-pair-status2" style="font-size:11px;color:var(--parchment-dim);margin-top:10px;"></p>
+    </div>
+    <button class="btn-secondary btn-small" id="offline-pair-close-btn" style="margin-top:14px;min-width:120px;">Cancel</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
      DISCONNECT ALERT
 ═══════════════════════════════════════════════════════════════ -->
 <div id="disconnect-alert">
@@ -1911,14 +1963,30 @@
   <h3 class="font-cinzel" style="color:var(--red-evil-l);font-size:18px;margin-bottom:8px;">Connection Lost</h3>
   <p id="disconnect-msg" style="color:var(--parchment-dim);font-size:13px;margin-bottom:20px;line-height:1.6;"></p>
   <div id="disconnect-choice-buttons" style="display:none;gap:10px;flex-wrap:wrap;justify-content:center;margin-bottom:10px;">
+    <button id="disconnect-reconnect-btn" class="btn-primary btn-small" style="display:none;min-width:160px;">📷 Reconnect via QR</button>
     <button id="disconnect-wait-btn" class="btn-primary btn-small" style="min-width:160px;">⏳ Wait for Reconnect</button>
     <button id="disconnect-terminate-btn" class="btn-danger btn-small" style="min-width:160px;">🛑 Terminate Game</button>
     <p id="disconnect-host-only-note" style="display:none;width:100%;font-size:11px;color:var(--parchment-dim);margin-top:4px;">Only the host can terminate the game.</p>
   </div>
   <div id="disconnect-waiting-note" style="display:none;flex-direction:column;align-items:center;gap:10px;">
     <p style="font-size:11px;color:var(--parchment-dim);">Gameplay is frozen until they return.</p>
+    <button id="disconnect-reconnect-btn2" class="btn-primary btn-small" style="display:none;min-width:160px;">📷 Reconnect via QR</button>
     <button id="disconnect-terminate-btn2" class="btn-danger btn-small" style="min-width:160px;">🛑 Terminate Game Instead</button>
     <p id="disconnect-host-only-note2" style="display:none;font-size:11px;color:var(--parchment-dim);">Only the host can terminate the game.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     OFFLINE RECONNECT PROMPT (shown to a guest whose own connection
+     to the host dropped — offline P2P has no automatic reconnect)
+═══════════════════════════════════════════════════════════════ -->
+<div id="offline-reconnect-modal" class="modal-backdrop">
+  <div class="modal-box" style="text-align:center;">
+    <div style="font-size:40px;margin-bottom:10px;">📡</div>
+    <h3 class="modal-title">Connection Lost</h3>
+    <p style="font-size:12px;color:var(--parchment-dim);margin-bottom:16px;line-height:1.6;">You've been disconnected from the host. Ask the host to start "Reconnect" for you, then scan their new code.</p>
+    <button id="offline-reconnect-btn" class="btn-primary btn-small" style="min-width:180px;">📷 Scan to Reconnect</button>
+    <button id="offline-reconnect-leave-btn" class="btn-secondary btn-small" style="min-width:180px;margin-top:10px;">Leave Game</button>
   </div>
 </div>
 
@@ -2165,6 +2233,12 @@ const firebaseConfig = {
 };
 const ADMIN_USERNAME = "adminDan";
 const ADMIN_CODE     = "0597";
+// "dan" is the other username allowed to host games (see canHost below).
+// It's hardcoded the same way adminDan is — NOT a Firebase account — so
+// logging in works with zero internet, which matters for fully-offline play.
+// Change DAN_CODE to whatever PIN you want; it's a plain local constant.
+const DAN_USERNAME    = "dan";
+const DAN_CODE        = "1234";
 
 /* ════════════════════════════════════════════════════════════════
    === BEGIN DEMO SANDBOX ZONE ===
@@ -2185,6 +2259,7 @@ let _state = {
   roomCode:         null,
   roomRef:          null,
   playersRef:       null,
+  connMode:         null,      // 'online' | 'offline' — which sync backend the current room uses
   // Game
   players:          [],       // [{id,name,emoji,isLocal,isHost,connected}]
   roles:            {},       // {playerId: roleKey}
@@ -2432,6 +2507,597 @@ function setupAuthListener() {
 }
 
 /* ════════════════════════════════════════════════════════════════
+   OFFLINE PEER-TO-PEER SYNC (WebRTC + QR pairing — no internet, no
+   signaling server). Devices must be able to reach each other
+   directly (normally: same WiFi network).
+
+   Topology: the HOST device relays messages between all players
+   (star), mirroring how the game already treats the host as the
+   authoritative writer in live mode. Pairing is done once per
+   player by exchanging WebRTC connection info (SDP) as QR codes —
+   host shows an "offer" QR, the joining player scans it, then shows
+   an "answer" QR back for the host to scan. After that one-time
+   handshake, gameplay data flows directly device-to-device.
+════════════════════════════════════════════════════════════════ */
+const P2P = {
+  mode: null,          // 'host' | 'guest' | null
+  myId: null,
+  room: null,           // authoritative room object (host) or mirrored copy (guest)
+  peerConns: {},        // host: { [playerId]: RTCPeerConnection }
+  channels: {},         // host: { [playerId]: RTCDataChannel }
+  hostConn: null,       // guest: RTCPeerConnection to host
+  hostChannel: null,    // guest: RTCDataChannel to host
+  onJoinRequest: null,  // host hook: (connId, {uid,name,emoji}) => void
+  onPeerOpen: null,     // host hook: (connId) => void
+  onPeerClose: null,    // host hook: (connId) => void
+  onHostOpen: null,     // guest hook: () => void
+  onHostClose: null,    // guest hook: () => void (fires only after a real prior connection dropped)
+  onHostFail: null,     // guest hook: () => void (fires if the initial pairing never connected at all)
+  _roomListeners: [],
+  _connIdToPlayerId: {}, // host: { [pairing-session connId]: real player/account uid }
+
+  reset() {
+    Object.values(this.peerConns).forEach(pc=>{ try{pc.close();}catch(e){} });
+    if(this.hostConn) { try{this.hostConn.close();}catch(e){} }
+    this.mode=null; this.myId=null; this.room=null;
+    this.peerConns={}; this.channels={}; this.hostConn=null; this.hostChannel=null;
+    this.onJoinRequest=null; this.onPeerOpen=null; this.onPeerClose=null;
+    this.onHostOpen=null; this.onHostClose=null; this.onHostFail=null;
+    this._roomListeners=[]; this._connIdToPlayerId={}; this._reassembly={};
+  },
+
+  /* ---- local room-state helpers (mirrors what a Firebase snapshot gives) ---- */
+  _getAt(path) {
+    if(!path) return this.room;
+    return path.split('/').reduce((o,k)=> (o==null?undefined:o[k]), this.room);
+  },
+  _snap(val) { return { exists:()=> val!=null, val:()=> (val===undefined?null:val) }; },
+  _applyPatch(patch) {
+    if(!this.room) this.room = {};
+    Object.entries(patch).forEach(([path,value])=>{
+      if(path==='') { if(value && typeof value==='object') this.room=value; return; }
+      const parts = path.split('/');
+      let obj = this.room;
+      for(let i=0;i<parts.length-1;i++) {
+        const k=parts[i];
+        if(obj[k]==null || typeof obj[k]!=='object') obj[k]={};
+        obj=obj[k];
+      }
+      const lastKey=parts[parts.length-1];
+      if(value===null || value===undefined) delete obj[lastKey];
+      else obj[lastKey]=value;
+    });
+  },
+  _emitRoom() {
+    this._roomListeners.forEach(l=>l.fire());
+    if(this.mode==='host') saveOfflineHostSnapshot();
+  },
+
+  onValue(path, cb) {
+    const fire=()=>cb(this._snap(this._getAt(path)));
+    fire();
+    const entry={fire};
+    this._roomListeners.push(entry);
+    return ()=>{ this._roomListeners=this._roomListeners.filter(l=>l!==entry); };
+  },
+  get(path) { return Promise.resolve(this._snap(this._getAt(path))); },
+
+  update(patch) {
+    if(this.mode==='host') {
+      this._applyPatch(patch);
+      this._emitRoom();
+      this._broadcast({t:'room', room:this.room});
+      return Promise.resolve();
+    }
+    if(this.mode==='guest') {
+      this._sendToHost({t:'update', patch});
+      return Promise.resolve();
+    }
+    return Promise.reject(new Error('Not connected'));
+  },
+  set(path, value) { return this.update({[path]: value}); },
+  remove(path) { return this.update({[path]: null}); },
+
+  onConnected(cb) {
+    // We only reach gameplay once the P2P link is already up, so report
+    // connected immediately. Kept as a subscription for API symmetry.
+    cb(true);
+    return ()=>{};
+  },
+
+  /* ---- messaging (chunked — a data channel message has a real size limit,
+     and base64 image assets can easily exceed it) ---- */
+  _CHUNK_SIZE: 15000,
+  _reassembly: {}, // { [bufferKey]: { parts:[...], count } }
+  _sendChunked(channel, obj) {
+    const str = JSON.stringify(obj);
+    if(str.length <= this._CHUNK_SIZE) { channel.send(JSON.stringify({n:1,i:0,d:str})); return; }
+    const mid = Math.random().toString(36).slice(2,8);
+    const n = Math.ceil(str.length/this._CHUNK_SIZE);
+    for(let i=0;i<n;i++) {
+      channel.send(JSON.stringify({mid,n,i,d:str.slice(i*this._CHUNK_SIZE,(i+1)*this._CHUNK_SIZE)}));
+    }
+  },
+  // Reassembles chunks per sender (bufferKey) and hands the full decoded
+  // message to `onComplete` only once all its chunks have arrived.
+  _receiveChunk(bufferKey, raw, onComplete) {
+    let part; try{ part=JSON.parse(raw); }catch(e){ return; }
+    if(part.n===1) { try{ onComplete(JSON.parse(part.d)); }catch(e){} return; }
+    const key = bufferKey+':'+part.mid;
+    if(!this._reassembly[key]) this._reassembly[key]={parts:new Array(part.n), count:0};
+    const entry=this._reassembly[key];
+    if(entry.parts[part.i]===undefined) { entry.parts[part.i]=part.d; entry.count++; }
+    if(entry.count===part.n) {
+      delete this._reassembly[key];
+      try{ onComplete(JSON.parse(entry.parts.join(''))); }catch(e){}
+    }
+  },
+  _broadcast(msg) {
+    Object.values(this.channels).forEach(ch=>{ if(ch.readyState==='open') this._sendChunked(ch, msg); });
+  },
+  _sendToHost(msg) {
+    if(this.hostChannel && this.hostChannel.readyState==='open') this._sendChunked(this.hostChannel, msg);
+  },
+  _handleHostMessage(playerId, msg) {
+    if(msg.t==='update') {
+      this._applyPatch(msg.patch);
+      this._emitRoom();
+      this._broadcast({t:'room', room:this.room});
+    } else if(msg.t==='join') {
+      if(this.onJoinRequest) this.onJoinRequest(playerId, msg);
+    }
+  },
+  _handleGuestMessage(msg) {
+    if(msg.t==='room') { this.room=msg.room; this._emitRoom(); }
+  },
+
+  /* ---- WebRTC pairing (QR based, no STUN/TURN — fully offline / LAN only) ---- */
+  async _waitIceComplete(pc) {
+    if(pc.iceGatheringState==='complete') return;
+    await new Promise(resolve=>{
+      const check=()=>{ if(pc.iceGatheringState==='complete'){ pc.removeEventListener('icegatheringstatechange',check); resolve(); } };
+      pc.addEventListener('icegatheringstatechange', check);
+      setTimeout(resolve, 4000); // safety timeout so pairing never hangs forever
+    });
+  },
+
+  // HOST: begin pairing a new player slot. Returns the offer string for a QR code.
+  async hostCreateOffer(playerId) {
+    const pc = new RTCPeerConnection({ iceServers: [] });
+    this.peerConns[playerId]=pc;
+    const channel = pc.createDataChannel('game');
+    this.channels[playerId]=channel;
+    channel.onopen  = ()=> { if(this.onPeerOpen)  this.onPeerOpen(playerId); };
+    channel.onclose = ()=> { if(this.onPeerClose) this.onPeerClose(playerId); };
+    channel.onerror = ()=> { if(this.onPeerClose) this.onPeerClose(playerId); };
+    channel.onmessage = e=> this._receiveChunk(playerId, e.data, msg=>this._handleHostMessage(playerId, msg));
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await this._waitIceComplete(pc);
+    return JSON.stringify(pc.localDescription);
+  },
+  // HOST: apply the answer scanned back from the joining player's QR code.
+  async hostApplyAnswer(playerId, answerJson) {
+    const pc = this.peerConns[playerId];
+    if(!pc) throw new Error('No pending pairing for that player');
+    await pc.setRemoteDescription(JSON.parse(answerJson));
+  },
+
+  // GUEST: given the host's offer QR content, produce the answer QR content.
+  async guestCreateAnswer(offerJson) {
+    const pc = new RTCPeerConnection({ iceServers: [] });
+    this.hostConn = pc;
+    let hadOpened = false;
+    pc.ondatachannel = e=>{
+      this.hostChannel = e.channel;
+      this.hostChannel.onopen  = ()=> { hadOpened=true; if(this.onHostOpen) this.onHostOpen(); };
+      // Only treat this as a "connection lost" event (which shows the guest a
+      // Reconnect prompt) if we'd actually connected before. If the channel
+      // never opened in the first place, this was a failed pairing attempt,
+      // not a drop — that gets its own message via onHostFail.
+      this.hostChannel.onclose = ()=> { if(hadOpened) { if(this.onHostClose) this.onHostClose(); } else if(this.onHostFail) this.onHostFail(); };
+      this.hostChannel.onerror = ()=> { if(hadOpened) { if(this.onHostClose) this.onHostClose(); } else if(this.onHostFail) this.onHostFail(); };
+      this.hostChannel.onmessage = ev=> this._receiveChunk('host', ev.data, msg=>this._handleGuestMessage(msg));
+    };
+    await pc.setRemoteDescription(JSON.parse(offerJson));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    await this._waitIceComplete(pc);
+    return JSON.stringify(pc.localDescription);
+  },
+};
+
+/* ════════════════════════════════════════════════════════════════
+   UNIFIED DATA LAYER — every existing call site keeps using the
+   same full "rooms/{code}/..." path strings and patch objects it
+   always has; this just routes them to Firebase (online) or the
+   P2P engine above (offline) depending on _state.connMode.
+════════════════════════════════════════════════════════════════ */
+const DB = {
+  isOffline() { return _state.connMode==='offline'; },
+  ready() { return this.isOffline() ? (P2P.mode!=null) : !!(_state.db && window._firebaseModules); },
+  _rel(fullPath) {
+    const root = `rooms/${_state.roomCode}`;
+    if(fullPath===root) return '';
+    const prefix = root+'/';
+    return fullPath.startsWith(prefix) ? fullPath.slice(prefix.length) : fullPath;
+  },
+  update(patch) {
+    if(this.isOffline()) {
+      const rel={}; Object.entries(patch).forEach(([p,v])=>{ rel[this._rel(p)]=v; });
+      return P2P.update(rel);
+    }
+    const { ref, update } = window._firebaseModules;
+    return update(ref(_state.db), patch);
+  },
+  set(fullPath, value) {
+    if(this.isOffline()) return P2P.set(this._rel(fullPath), value);
+    const { ref, set } = window._firebaseModules;
+    return set(ref(_state.db, fullPath), value);
+  },
+  remove(fullPath) {
+    if(this.isOffline()) return P2P.remove(this._rel(fullPath));
+    const { ref, remove } = window._firebaseModules;
+    return remove(ref(_state.db, fullPath));
+  },
+  get(fullPath) {
+    if(this.isOffline()) return P2P.get(this._rel(fullPath));
+    const { ref, get } = window._firebaseModules;
+    return get(ref(_state.db, fullPath));
+  },
+  onValue(fullPath, cb) {
+    if(this.isOffline()) return P2P.onValue(this._rel(fullPath), cb);
+    const { ref, onValue } = window._firebaseModules;
+    return onValue(ref(_state.db, fullPath), cb);
+  },
+  onConnected(cb) {
+    if(this.isOffline()) return P2P.onConnected(cb);
+    const { ref, onValue, onDisconnect, set } = window._firebaseModules;
+    const connRef=ref(_state.db,'.info/connected');
+    return onValue(connRef, snap=>{
+      if(snap.val()===true) {
+        const uid=_state.currentUser?.uid;
+        const myPresRef=ref(_state.db,`rooms/${_state.roomCode}/players/${uid}/connected`);
+        onDisconnect(myPresRef).set(false);
+        set(myPresRef,true);
+      }
+      cb(snap.val()===true);
+    });
+  },
+};
+
+/* ════════════════════════════════════════════════════════════════
+   OFFLINE HOST RECOVERY — if the host's browser reloads or crashes,
+   every WebRTC connection is gone (nothing can survive that), but the
+   game STATE (roles, votes, quest progress) doesn't have to be. We
+   snapshot it to localStorage on every change and offer to resume;
+   players then just re-pair into their existing seats via the normal
+   "Add Player via QR" flow (which already merges by uid, not order).
+════════════════════════════════════════════════════════════════ */
+const OFFLINE_SNAPSHOT_KEY = 'avalon_offline_host_snapshot';
+const OFFLINE_SNAPSHOT_MAX_AGE_MS = 6*60*60*1000; // 6 hours — stale games shouldn't resurrect
+
+function saveOfflineHostSnapshot() {
+  try {
+    localStorage.setItem(OFFLINE_SNAPSHOT_KEY, JSON.stringify({
+      hostUid: _state.currentUser?.uid, roomCode: _state.roomCode, room: P2P.room, savedAt: Date.now()
+    }));
+  } catch(e) {}
+}
+function loadOfflineHostSnapshot() {
+  try {
+    const raw = localStorage.getItem(OFFLINE_SNAPSHOT_KEY);
+    if(!raw) return null;
+    const snap = JSON.parse(raw);
+    if(Date.now() - (snap.savedAt||0) > OFFLINE_SNAPSHOT_MAX_AGE_MS) return null;
+    return snap;
+  } catch(e) { return null; }
+}
+function clearOfflineHostSnapshot() {
+  try { localStorage.removeItem(OFFLINE_SNAPSHOT_KEY); } catch(e) {}
+}
+
+// Resume hosting a game that was in progress before this device reloaded.
+// Every player (including us) shows as disconnected until they re-pair —
+// that's expected, since no WebRTC connection survives a page reload.
+function resumeOfflineHostedGame() {
+  const snap = loadOfflineHostSnapshot();
+  const uid = _state.currentUser?.uid;
+  if(!snap || snap.hostUid!==uid) return;
+  _state.connMode = 'offline';
+  _state.roomCode = snap.roomCode;
+  P2P.reset();
+  P2P.mode = 'host';
+  P2P.myId = uid;
+  P2P.room = snap.room;
+  // Mark everyone (including us, until UI re-renders) as needing to re-pair.
+  Object.keys(P2P.room.players||{}).forEach(pid=>{
+    if(pid!==uid) P2P.room.players[pid].connected=false;
+  });
+  if(P2P.room.players?.[uid]) P2P.room.players[uid].connected=true;
+  saveOfflineHostSnapshot();
+  if(P2P.room.phase && P2P.room.phase!=='staging') {
+    _state.players = Object.entries(P2P.room.players||{})
+      .map(([id,p])=>({id,...p,isLocal:id===uid,isHost:P2P.room.hostId===id}))
+      .sort((a,b)=>(a.order??0)-(b.order??0));
+    _state.gameListenerActive = false;
+    loadGameState(P2P.room);
+    showToast('Game resumed — other players need to reconnect via QR','info');
+  } else {
+    enterStagingScreen(_state.roomCode, true);
+  }
+}
+
+function createOfflineRoom() {
+  const btn = $('create-room-btn');
+  const code = genCode();
+  const maxPlayers = parseInt($('player-count-select').value)||5;
+  _state.roomCode = code;
+  _state.connMode = 'offline';
+  clearOfflineHostSnapshot();
+  P2P.reset();
+  P2P.mode='host';
+  const uid = _state.currentUser.uid;
+  P2P.myId = uid;
+  const ladyEnabled    = $('create-lady-toggle')?.classList.contains('on') ?? false;
+  const includeMordred = $('create-mordred-toggle')?.classList.contains('on') ?? false;
+  const includeOberon  = $('create-oberon-toggle')?.classList.contains('on') ?? false;
+  const nightPhaseMode = (_state.isAdmin && $('create-night-toggle')?.classList.contains('on')) ? 'moderated' : 'solo';
+  P2P.room = {
+    hostId: uid, maxPlayers, phase:'staging',
+    createdAt: Date.now(), ladyEnabled, nightPhaseMode, includeMordred, includeOberon,
+    players: { [uid]: { name:_state.currentUser.displayName, emoji:_state.heroIcon||getPlayerEmoji(0), isHost:true, connected:true, order:0 } }
+  };
+  if(_state.isAdmin) _state.createdRooms.push({code, maxPlayers, createdAt:Date.now()});
+  setLoading(btn, false);
+  enterStagingScreen(code, true);
+}
+
+// HOST: begin pairing a new player (or reconnecting a dropped one) — shows
+// the offer QR and a "scan reply" step. `existingUid` lets a specific
+// disconnected player be reconnected into their existing seat instead of
+// being added as a new one.
+async function offlineHostAddPlayer(existingUid=null) {
+  if(!P2P.room) return;
+  const count = Object.keys(P2P.room.players||{}).length;
+  if(!existingUid && count >= P2P.room.maxPlayers) { showToast('Room is full','error'); return; }
+  // If a previous pairing attempt is still in flight (double-tap, or a
+  // reconnect started while another invite was open), close it out first so
+  // we don't leak a dangling RTCPeerConnection.
+  const stalePendingId = _state.pendingPairId;
+  if(stalePendingId && P2P.peerConns[stalePendingId]) {
+    try{ P2P.peerConns[stalePendingId].close(); }catch(e){}
+    delete P2P.peerConns[stalePendingId];
+    delete P2P.channels[stalePendingId];
+  }
+  const connId = 'p2p_'+Math.random().toString(36).slice(2,10);
+  _state.pendingPairId = connId;
+
+  P2P.onJoinRequest = (arrivingConnId, msg) => {
+    if(arrivingConnId!==connId) return;
+    const realUid = msg.uid || arrivingConnId;
+    P2P._connIdToPlayerId[connId] = realUid;
+    const isReturning = !!P2P.room.players?.[realUid];
+    const n = Object.keys(P2P.room.players||{}).length;
+    const patch = {
+      [`players/${realUid}/connected`]: true,
+      [`players/${realUid}/isHost`]: false,
+    };
+    if(!isReturning) {
+      // Brand new player — assign seat order and identity now.
+      patch[`players/${realUid}/name`]  = msg.name || 'Player';
+      patch[`players/${realUid}/emoji`] = msg.emoji || getPlayerEmoji(n);
+      patch[`players/${realUid}/order`] = n;
+    }
+    P2P._applyPatch(patch);
+    P2P._emitRoom();
+    P2P._broadcast({t:'room', room:P2P.room});
+    hideModal('offline-pair-modal');
+    showToast(isReturning ? 'Player reconnected!' : 'Player joined!', 'success');
+  };
+  P2P.onPeerClose = (closedConnId) => {
+    const realUid = P2P._connIdToPlayerId[closedConnId] || closedConnId;
+    if(P2P.room?.players?.[realUid]) {
+      P2P._applyPatch({[`players/${realUid}/connected`]: false});
+      P2P._emitRoom();
+      P2P._broadcast({t:'room', room:P2P.room});
+      initDisconnectChoice(realUid, P2P.room.players[realUid].name||'A player');
+    }
+  };
+
+  showModal('offline-pair-modal');
+  $('offline-pair-step1').style.display='block';
+  $('offline-pair-step2').style.display='none';
+  $('offline-pair-status').textContent='Generating connection code…';
+  try {
+    const offerStr = await P2P.hostCreateOffer(connId);
+    generateQR($('offline-pair-qr'), offerStr, 220);
+    $('offline-pair-status').textContent='Have the joining player scan this code, then scan their reply below.';
+  } catch(e) {
+    $('offline-pair-status').textContent='Could not start pairing: '+e.message;
+  }
+}
+
+function offlineHostGoToScanReply() {
+  $('offline-pair-step1').style.display='none';
+  $('offline-pair-step2').style.display='block';
+  startQrScanner('offline-pair-scan-video', async (text)=>{
+    stopQrScanner();
+    try {
+      await P2P.hostApplyAnswer(_state.pendingPairId, text);
+      $('offline-pair-status2').textContent='Connecting…';
+    } catch(e) {
+      $('offline-pair-status2').textContent='Pairing failed: '+e.message;
+    }
+  });
+}
+
+// GUEST: scan the host's offer, then show our own answer QR back.
+// `isReconnect` keeps our existing roomCode/game state instead of resetting it,
+// so a dropped player can rejoin mid-game rather than only from the lobby.
+function offlineJoinShowScan(isReconnect=false) {
+  _state.offlineJoinIsReconnect = isReconnect;
+  showScreen('screen-offline-join');
+  $('offline-join-scan-wrap').style.display='block';
+  $('offline-join-answer-wrap').style.display='none';
+  startQrScanner('offline-join-scan-video', async (text)=>{
+    stopQrScanner();
+    _state.connMode='offline';
+    const uid = _state.currentUser.uid;
+    P2P.reset();
+    P2P.mode='guest';
+    // Offline pairing never transmits a room "code" (there's no server to look
+    // one up against) — this is just a stable local label so path strings like
+    // `rooms/${_state.roomCode}/...` resolve consistently on this device.
+    _state.roomCode = 'OFFLINE';
+    P2P.myId = uid;
+
+    // Some ICE failures never fire onclose/onerror — the channel just stays
+    // stuck "connecting" forever. This backstop catches that case too, so
+    // the player never gets stranded on the answer-QR screen with no signal.
+    // Stored on _state (not just this closure) so navigating away (e.g. the
+    // back button) can cancel it too.
+    let settled = false;
+    _state.offlineJoinConnectTimeoutId = setTimeout(()=>{ if(!settled) { settled=true; handleJoinFailure(); } }, 25000);
+
+    function handleJoinFailure() {
+      clearTimeout(_state.offlineJoinConnectTimeoutId);
+      _state.offlineJoinConnectTimeoutId = null;
+      P2P.reset();
+      _state.connMode = null;
+      showToast('Could not connect. Make sure both devices are on the same WiFi network and try again.','error');
+      $('offline-join-scan-wrap').style.display='block';
+      $('offline-join-answer-wrap').style.display='none';
+      offlineJoinShowScan(isReconnect);
+    }
+
+    P2P.onHostOpen = () => {
+      settled = true;
+      clearTimeout(_state.offlineJoinConnectTimeoutId);
+      _state.offlineJoinConnectTimeoutId = null;
+      P2P._sendToHost({t:'join', uid, name:_state.currentUser.displayName, emoji:_state.heroIcon||getPlayerEmoji(0)});
+    };
+    // Fires only if we'd actually connected before and then dropped mid-game.
+    P2P.onHostClose = () => showOfflineReconnectPrompt();
+    // Fires if this initial pairing attempt never connected in the first place.
+    P2P.onHostFail = () => { if(!settled) { settled=true; handleJoinFailure(); } };
+
+    try {
+      const answerStr = await P2P.guestCreateAnswer(text);
+      $('offline-join-scan-wrap').style.display='none';
+      $('offline-join-answer-wrap').style.display='block';
+      generateQR($('offline-join-answer-qr'), answerStr, 220);
+      waitForOfflineRoomAndEnter();
+    } catch(e) {
+      if(!settled) { settled=true; clearTimeout(_state.offlineJoinConnectTimeoutId); _state.offlineJoinConnectTimeoutId=null; }
+      P2P.reset();
+      _state.connMode = null;
+      showToast('Could not pair: '+e.message,'error');
+      $('offline-join-scan-wrap').style.display='block';
+      $('offline-join-answer-wrap').style.display='none';
+      offlineJoinShowScan(isReconnect);
+    }
+  });
+}
+
+function waitForOfflineRoomAndEnter() {
+  if(_state.offlineJoinPollId) clearInterval(_state.offlineJoinPollId);
+  _state.offlineJoinPollId = setInterval(()=>{
+    if(P2P.room && P2P.room.players && P2P.room.players[P2P.myId]) {
+      clearInterval(_state.offlineJoinPollId);
+      _state.offlineJoinPollId = null;
+      hideModal('offline-reconnect-modal');
+      if(P2P.room.phase && P2P.room.phase!=='staging') {
+        // Rejoining mid-game (reconnect case) — rebuild the player list (it
+        // may be stale from before we dropped) and resume the live game
+        // screen rather than sending a returning player back to the lobby.
+        _state.players = Object.entries(P2P.room.players||{})
+          .map(([id,p])=>({id,...p,isLocal:id===_state.currentUser?.uid,isHost:P2P.room.hostId===id}))
+          .sort((a,b)=>(a.order??0)-(b.order??0));
+        _state.gameListenerActive = false;
+        loadGameState(P2P.room);
+        checkReconnectPrompt();
+      } else {
+        enterStagingScreen(_state.roomCode, false);
+      }
+    }
+  }, 300);
+}
+
+// GUEST: shown when our connection to the host drops mid-game. Lets us
+// redo the QR handshake to rejoin our same seat (P2P has no automatic
+// reconnect the way Firebase does, so this replaces that step manually).
+function showOfflineReconnectPrompt() {
+  if(_state.connMode!=='offline' || P2P.mode!=='guest') return;
+  showModal('offline-reconnect-modal');
+}
+function cancelOfflineJoinAttempt() {
+  stopQrScanner();
+  if(_state.offlineJoinPollId) { clearInterval(_state.offlineJoinPollId); _state.offlineJoinPollId=null; }
+  if(_state.offlineJoinConnectTimeoutId) { clearTimeout(_state.offlineJoinConnectTimeoutId); _state.offlineJoinConnectTimeoutId=null; }
+  P2P.reset();
+}
+$('offline-reconnect-btn')?.addEventListener('click', () => {
+  hideModal('offline-reconnect-modal');
+  offlineJoinShowScan(true);
+});
+$('offline-reconnect-leave-btn')?.addEventListener('click', () => {
+  hideModal('offline-reconnect-modal');
+  cancelOfflineJoinAttempt();
+  _state.connMode = null;
+  _state.roomCode = null;
+  _state.players = [];
+  _state.myRole = null;
+  _state.phase = 'lobby';
+  showScreen('screen-lobby');
+  setNavPhase('Lobby');
+});
+$('offline-join-back-btn')?.addEventListener('click', () => {
+  cancelOfflineJoinAttempt();
+  if(_state.offlineJoinIsReconnect) {
+    // Came from mid-game "Connection Lost" — go back to that prompt, not the lobby.
+    showModal('offline-reconnect-modal');
+  } else if(_state.roomCode && _state.players?.length) {
+    // Already in a room on this device (rare, but be safe) — back to staging/game.
+    showScreen(_state.phase==='staging' ? 'screen-staging' : 'screen-game');
+  } else {
+    showScreen('screen-lobby');
+    setNavPhase('Lobby');
+  }
+});
+
+/* ---- lightweight camera QR scanner (jsQR), shared by host + guest flows ---- */
+let _qrScanState = { stream:null, raf:null };
+function startQrScanner(videoElId, onDecoded) {
+  const video = $(videoElId);
+  if(!video || !window.jsQR) { showToast('Camera scanning unavailable on this device','error'); return; }
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(stream=>{
+    _qrScanState.stream = stream;
+    video.srcObject = stream;
+    video.setAttribute('playsinline', true);
+    video.play();
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const tick = () => {
+      if(video.readyState===video.HAVE_ENOUGH_DATA) {
+        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height);
+        if(code && code.data) { onDecoded(code.data); return; }
+      }
+      _qrScanState.raf = requestAnimationFrame(tick);
+    };
+    _qrScanState.raf = requestAnimationFrame(tick);
+  }).catch(e=>{ showToast('Camera access denied: '+e.message,'error'); });
+}
+function stopQrScanner() {
+  if(_qrScanState.raf) cancelAnimationFrame(_qrScanState.raf);
+  if(_qrScanState.stream) _qrScanState.stream.getTracks().forEach(t=>t.stop());
+  _qrScanState = { stream:null, raf:null };
+}
+
+/* ════════════════════════════════════════════════════════════════
    AUTH SCREEN EVENTS
 ════════════════════════════════════════════════════════════════ */
 /* ─── Loading state helper ───────────────────────────────────────
@@ -2532,6 +3198,17 @@ async function performAccountLogin(username, code) {
     _state.previousGames = [];
     return;
   }
+  // "dan" is reserved and hardcoded too (see DAN_USERNAME above) — this keeps
+  // hosting available fully offline, with no Firebase round-trip required.
+  if(username === DAN_USERNAME.toLowerCase()) {
+    if(code !== DAN_CODE) throw new Error('Incorrect code');
+    _state.currentUser = { uid:'user_'+DAN_USERNAME, displayName:DAN_USERNAME, isAnonymous:false };
+    _state.isAdmin   = false;
+    _state.isGuest   = false;
+    _state.heroIcon  = _state.heroIcon || avatarEmojis[0];
+    _state.previousGames = [];
+    return;
+  }
 
   if(DEMO_MODE_ACTIVE || !_state.db || !window._firebaseModules) {
     throw new Error('Not connected — cannot verify account');
@@ -2556,6 +3233,7 @@ async function performAccountLogin(username, code) {
 async function performAccountCreate(username, code, chosenIcon) {
   username = username.toLowerCase(); // normalize — prevents case-variant duplicates
   if(username === ADMIN_USERNAME.toLowerCase()) throw new Error('That username is reserved');
+  if(username === DAN_USERNAME.toLowerCase()) throw new Error('That username is reserved');
 
   if(DEMO_MODE_ACTIVE || !_state.db || !window._firebaseModules) {
     // Fallback (no Firebase) — treat as local-only account
@@ -2664,6 +3342,11 @@ function goToLobby(name) {
   const canHost = _state.isAdmin || (name||'').toLowerCase()==='dan';
   const hostCard = $('host-a-game-card');
   if(hostCard) hostCard.style.display = canHost ? 'block' : 'none';
+  const resumeBtn = $('resume-offline-btn');
+  if(resumeBtn) {
+    const snap = loadOfflineHostSnapshot();
+    resumeBtn.style.display = (canHost && snap && snap.hostUid===_state.currentUser?.uid) ? 'block' : 'none';
+  }
   if(!DEMO_MODE_ACTIVE) loadAvailableRooms();
   // Show demo rooms if demo mode
   if(DEMO_MODE_ACTIVE) {
@@ -2711,7 +3394,12 @@ function loadAvailableRooms() {
   });
 }
 
-$('create-room-btn').addEventListener('click', createRoom);
+$('create-room-btn').addEventListener('click', () => {
+  if($('create-offline-toggle')?.classList.contains('on')) createOfflineRoom();
+  else createRoom();
+});
+$('resume-offline-btn')?.addEventListener('click', resumeOfflineHostedGame);
+$('create-offline-toggle')?.addEventListener('click', function(){ this.classList.toggle('on'); });
 $('create-lady-toggle')?.addEventListener('click', function(){
   this.classList.toggle('on');
 });
@@ -2739,6 +3427,20 @@ $('join-room-btn').addEventListener('click', () => {
   setLoading($('join-room-btn'), true, 'Joining…');
   joinRoom(code);
 });
+$('join-offline-btn')?.addEventListener('click', offlineJoinShowScan);
+$('staging-add-player-offline-btn')?.addEventListener('click', offlineHostAddPlayer);
+$('offline-pair-next-btn')?.addEventListener('click', offlineHostGoToScanReply);
+$('offline-pair-close-btn')?.addEventListener('click', () => {
+  stopQrScanner();
+  const pendingId = _state.pendingPairId;
+  if(pendingId && P2P.peerConns[pendingId]) {
+    try{ P2P.peerConns[pendingId].close(); }catch(e){}
+    delete P2P.peerConns[pendingId];
+    delete P2P.channels[pendingId];
+  }
+  _state.pendingPairId = null;
+  hideModal('offline-pair-modal');
+});
 
 /* ════════════════════════════════════════════════════════════════
    ROOM MANAGEMENT
@@ -2748,6 +3450,7 @@ function createRoom() {
   const code = genCode();
   const maxPlayers = parseInt($('player-count-select').value)||5;
   _state.roomCode = code;
+  _state.connMode = 'online';
 
   if(DEMO_MODE_ACTIVE) {
     setupDemoRoom(code, maxPlayers);
@@ -2775,6 +3478,7 @@ function createRoom() {
 
 function joinRoom(code) {
   if(DEMO_MODE_ACTIVE) { setupDemoRoom(code, 5); return; }
+  _state.connMode = 'online';
   if(!_state.db || !window._firebaseModules) return;
   const { ref, get, update } = window._firebaseModules;
   const roomRef = ref(_state.db, `rooms/${code}`);
@@ -2902,8 +3606,15 @@ function demoBotAll() {
 function enterStagingScreen(code, isHost) {
   showScreen('screen-staging');
   setNavPhase('Staging');
-  $('staging-room-code').textContent = code;
-  generateQR($('staging-qr'), `${window.location.href}?room=${code}`, 80);
+  $('staging-room-code').textContent = _state.connMode==='offline' ? 'OFFLINE' : code;
+  if(_state.connMode==='offline') {
+    $('staging-qr').style.display='none';
+    $('staging-add-player-offline-btn').style.display = isHost ? 'block' : 'none';
+  } else {
+    $('staging-qr').style.display='block';
+    generateQR($('staging-qr'), `${window.location.href}?room=${code}`, 80);
+    $('staging-add-player-offline-btn').style.display='none';
+  }
 
   if(DEMO_MODE_ACTIVE) {
     renderStagingPlayers();
@@ -2919,10 +3630,8 @@ function enterStagingScreen(code, isHost) {
     return;
   }
   // Live mode: subscribe to room changes
-  if(!_state.db || !window._firebaseModules) return;
-  const { ref, onValue } = window._firebaseModules;
-  const rRef = ref(_state.db, `rooms/${code}`);
-  const unsub = onValue(rRef, snap=>{
+  if(!DB.ready()) return;
+  const unsub = DB.onValue(`rooms/${code}`, snap=>{
     const data = snap.val();
     if(!data) return;
     // Once the game leaves staging, hand off to setupGameListeners()'s own
@@ -2945,6 +3654,7 @@ function enterStagingScreen(code, isHost) {
       renderRoleConfig();
       renderSeatOrderConfig();
       $('start-game-btn').style.display = players.length>=data.maxPlayers ? 'block':'none';
+      $('staging-add-player-offline-btn').style.display = (_state.connMode==='offline' && players.length<data.maxPlayers) ? 'block':'none';
     }
     setupDisconnectHandlers();
   });
@@ -3040,9 +3750,8 @@ function swapSeatOrder(uidA, uidB) {
     renderSeatOrderConfig();
     return;
   }
-  if(!_state.db || !window._firebaseModules || !_state.roomCode) return;
-  const { ref, update } = window._firebaseModules;
-  update(ref(_state.db), {
+  if(!DB.ready() || !_state.roomCode) return;
+  DB.update({
     [`rooms/${_state.roomCode}/players/${uidA}/order`]: orderB,
     [`rooms/${_state.roomCode}/players/${uidB}/order`]: orderA,
   }).catch(e=>showToast(e.message,'error'));
@@ -3054,9 +3763,8 @@ function setFirstLeader(uid) {
     renderSeatOrderConfig();
     return;
   }
-  if(!_state.db || !window._firebaseModules || !_state.roomCode) return;
-  const { ref, update } = window._firebaseModules;
-  update(ref(_state.db), { [`rooms/${_state.roomCode}/firstLeaderId`]: uid }).catch(e=>showToast(e.message,'error'));
+  if(!DB.ready() || !_state.roomCode) return;
+  DB.update({ [`rooms/${_state.roomCode}/firstLeaderId`]: uid }).catch(e=>showToast(e.message,'error'));
 }
 
 $('start-game-btn')?.addEventListener('click', startGame);
@@ -3107,11 +3815,10 @@ function startGame() {
     enterGameScreen();
     return;
   }
-  if(!_state.db || !window._firebaseModules) return;
-  const { ref, update } = window._firebaseModules;
+  if(!DB.ready()) return;
   const updates = { [`rooms/${_state.roomCode}/phase`]: 'roleReveal', [`rooms/${_state.roomCode}/currentLeader`]: leaderIdx, [`rooms/${_state.roomCode}/questIndex`]: 0, [`rooms/${_state.roomCode}/voteTrack`]: 0 };
   _state.players.forEach((p,i)=>{ updates[`rooms/${_state.roomCode}/roles/${p.id}`] = roles[i]; });
-  update(ref(_state.db), updates).catch(e=>showToast(e.message,'error'));
+  DB.update(updates).catch(e=>showToast(e.message,'error'));
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -3378,9 +4085,8 @@ function confirmRoleSeen() {
 
   const uid = _state.currentUser?.uid;
   if(!uid) return;
-  if(!DEMO_MODE_ACTIVE && _state.db && window._firebaseModules && _state.roomCode) {
-    const { ref, update } = window._firebaseModules;
-    update(ref(_state.db), { [`rooms/${_state.roomCode}/roleConfirms/${uid}`]: true }).catch(()=>{});
+  if(!DEMO_MODE_ACTIVE && DB.ready() && _state.roomCode) {
+    DB.update({ [`rooms/${_state.roomCode}/roleConfirms/${uid}`]: true }).catch(()=>{});
   } else {
     // Demo mode: just mark locally and update panel
     _state.roleConfirms[uid] = true;
@@ -3406,9 +4112,8 @@ function checkNightPhaseAdvance() {
   }
   // Live: only the host writes the phase transition, so every client
   // isn't racing to push the same update.
-  if(_state.players[_state.myIndex]?.isHost && _state.db && window._firebaseModules && _state.roomCode) {
-    const { ref, update } = window._firebaseModules;
-    update(ref(_state.db), { [`rooms/${_state.roomCode}/phase`]: 'nightPhase' }).catch(()=>{});
+  if(_state.players[_state.myIndex]?.isHost && DB.ready() && _state.roomCode) {
+    DB.update({ [`rooms/${_state.roomCode}/phase`]: 'nightPhase' }).catch(()=>{});
   }
 }
 
@@ -3430,9 +4135,8 @@ $('solo-night-start-btn')?.addEventListener('click', ()=>{
     renderTable(); renderQuestBoard(); renderBottomStrip(); setNavPhase('Nomination');
     return;
   }
-  if(!_state.db || !window._firebaseModules || !_state.roomCode) return;
-  const { ref, update } = window._firebaseModules;
-  update(ref(_state.db), {
+  if(!DB.ready() || !_state.roomCode) return;
+  DB.update({
     [`rooms/${_state.roomCode}/phase`]: 'nominate',
     [`rooms/${_state.roomCode}/roleConfirms`]: null,
   }).catch(e=>showToast(e.message,'error'));
@@ -3450,14 +4154,13 @@ $('solo-night-reshuffle-btn')?.addEventListener('click', ()=>{
     enterGameScreen();
     return;
   }
-  if(!_state.db || !window._firebaseModules || !_state.roomCode) return;
-  const { ref, update } = window._firebaseModules;
+  if(!DB.ready() || !_state.roomCode) return;
   const updates = {
     [`rooms/${_state.roomCode}/phase`]: 'roleReveal',
     [`rooms/${_state.roomCode}/roleConfirms`]: null,
   };
   _state.players.forEach((p,i)=>{ updates[`rooms/${_state.roomCode}/roles/${p.id}`] = roles[i]; });
-  update(ref(_state.db), updates).catch(e=>showToast(e.message,'error'));
+  DB.update(updates).catch(e=>showToast(e.message,'error'));
 });
 
 $('role-peek-confirm-btn')?.addEventListener('click', confirmRoleSeen);
@@ -3500,9 +4203,8 @@ function updateModeratorPanel() {
 
 $('mod-start-game-btn')?.addEventListener('click',()=>{
   hideModal('moderated-night-modal');
-  if(!DEMO_MODE_ACTIVE && _state.db && window._firebaseModules && _state.roomCode) {
-    const { ref, update } = window._firebaseModules;
-    update(ref(_state.db),{
+  if(!DEMO_MODE_ACTIVE && DB.ready() && _state.roomCode) {
+    DB.update({
       [`rooms/${_state.roomCode}/phase`]:'nominate',
       [`rooms/${_state.roomCode}/roleConfirms`]:null,
     }).catch(e=>showToast(e.message,'error'));
@@ -3695,12 +4397,13 @@ $('nomination-cancel-btn')?.addEventListener('click',()=>hideModal('nomination-m
 
 // Push a partial state update to the shared Firebase room so every
 // connected client's onValue listener picks it up. No-op in demo mode.
+// Push a partial state update to the shared room state so every connected
+// client's listener picks it up (Firebase online, or P2P offline). No-op in demo mode.
 function syncRoom(fields) {
-  if(DEMO_MODE_ACTIVE || !_state.db || !window._firebaseModules) return;
-  const { ref, update } = window._firebaseModules;
+  if(DEMO_MODE_ACTIVE || !DB.ready()) return;
   const payload={};
   Object.keys(fields).forEach(k=>{ payload[`rooms/${_state.roomCode}/${k}`]=fields[k]; });
-  update(ref(_state.db), payload);
+  DB.update(payload);
 }
 
 function advanceToVote() {
@@ -3721,9 +4424,8 @@ function advanceToVote() {
 function submitTeamVote(choice) {
   const me=_state.players[_state.myIndex];
   _state.questVotes[me.id]=choice;
-  if(!DEMO_MODE_ACTIVE && _state.db && window._firebaseModules) {
-    const { ref, update } = window._firebaseModules;
-    update(ref(_state.db),{[`rooms/${_state.roomCode}/questVotes/${me.id}`]:choice});
+  if(!DEMO_MODE_ACTIVE && DB.ready()) {
+    DB.update({[`rooms/${_state.roomCode}/questVotes/${me.id}`]:choice});
   }
   renderBottomStrip();
   if(DEMO_MODE_ACTIVE) {
@@ -3865,9 +4567,8 @@ function showQuestActionModal() {
 function submitQuestCard(choice) {
   const me=_state.players[_state.myIndex];
   _state.questCards[me.id]=choice;
-  if(!DEMO_MODE_ACTIVE && _state.db && window._firebaseModules) {
-    const { ref, update } = window._firebaseModules;
-    update(ref(_state.db),{[`rooms/${_state.roomCode}/questCards/${me.id}`]:choice});
+  if(!DEMO_MODE_ACTIVE && DB.ready()) {
+    DB.update({[`rooms/${_state.roomCode}/questCards/${me.id}`]:choice});
   }
   renderBottomStrip();
   if(DEMO_MODE_ACTIVE && allQuestCardsIn()) startQuestReveal();
@@ -4171,7 +4872,7 @@ function broadcastLadyChoice(fromIdx, toIdx) {
   const uid=_state.currentUser?.uid;
   if(!fromP || !toP) return;
 
-  if(!_state.db || !window._firebaseModules) {
+  if(!DB.ready()) {
     // Demo mode: show the broadcast modal so all players (one device) can acknowledge.
     $('lady-broadcast-text').textContent=`${fromP.name} has inspected ${toP.name}'s loyalty.`;
     $('lady-broadcast-count').textContent='Tap below to acknowledge and continue.';
@@ -4189,10 +4890,9 @@ function broadcastLadyChoice(fromIdx, toIdx) {
     return;
   }
 
-  // Live mode: write to Firebase; all clients receive via handleLadyBroadcast
+  // Live mode: write to shared room state; all clients receive via handleLadyBroadcast
   const payload={ fromIdx, toIdx, fromName:fromP.name, toName:toP.name, ack:{ [uid]:true } };
-  const { ref, update } = window._firebaseModules;
-  update(ref(_state.db), { [`rooms/${_state.roomCode}/ladyBroadcast`]: payload }).catch(e=>showToast(e.message,'error'));
+  DB.update({ [`rooms/${_state.roomCode}/ladyBroadcast`]: payload }).catch(e=>showToast(e.message,'error'));
 }
 
 // Renders the "X inspected Y's Loyalty" prompt to every player.
@@ -4230,9 +4930,8 @@ function handleLadyBroadcast(broadcast) {
 
   if(ackCount>=n) {
     hideModal('lady-broadcast-modal');
-    if(_state.db && window._firebaseModules) {
-      const { ref, update } = window._firebaseModules;
-      update(ref(_state.db), {
+    if(DB.ready()) {
+      DB.update({
         [`rooms/${_state.roomCode}/ladyHolder`]: broadcast.toIdx,
         [`rooms/${_state.roomCode}/phase`]: 'nominate',
         [`rooms/${_state.roomCode}/ladyBroadcast`]: null,
@@ -4244,11 +4943,10 @@ function handleLadyBroadcast(broadcast) {
 $('lady-broadcast-btn')?.addEventListener('click', ()=>{
   // Demo mode: onclick is set as a property override — let that fire instead.
   if($('lady-broadcast-btn').onclick) return;
-  // Live mode: write our ack to Firebase
+  // Live mode: write our ack to shared room state
   const uid=_state.currentUser?.uid;
-  if(!uid || !_state.db || !window._firebaseModules || !_state.roomCode) return;
-  const { ref, update } = window._firebaseModules;
-  update(ref(_state.db), { [`rooms/${_state.roomCode}/ladyBroadcast/ack/${uid}`]: true }).catch(e=>showToast(e.message,'error'));
+  if(!uid || !DB.ready() || !_state.roomCode) return;
+  DB.update({ [`rooms/${_state.roomCode}/ladyBroadcast/ack/${uid}`]: true }).catch(e=>showToast(e.message,'error'));
 });
 
 /* ════════════════════════════════════════════════════════════════
@@ -4396,6 +5094,7 @@ function persistMatchResultToAccount(result) {
 $('endgame-lobby-btn')?.addEventListener('click',()=>{
   $('endgame-overlay').classList.remove('active');
   $('confetti-overlay').innerHTML='';
+  if(_state.connMode==='offline' && P2P.mode==='host') clearOfflineHostSnapshot();
   // Reset
   _state.phase='lobby';
   _state.players=[];
@@ -4727,18 +5426,16 @@ $('admin-demo-toggle')?.addEventListener('click',function(){
 $('admin-lady-toggle')?.addEventListener('click',function(){
   this.classList.toggle('on');
   _state.ladyEnabled=this.classList.contains('on');
-  if(!DEMO_MODE_ACTIVE && _state.db && window._firebaseModules) {
-    const { ref, update } = window._firebaseModules;
-    update(ref(_state.db),{[`rooms/${_state.roomCode}/ladyEnabled`]:_state.ladyEnabled});
+  if(!DEMO_MODE_ACTIVE && DB.ready()) {
+    DB.update({[`rooms/${_state.roomCode}/ladyEnabled`]:_state.ladyEnabled});
   }
   showToast(`Lady of the Lake ${_state.ladyEnabled?'enabled':'disabled'}`, 'info');
 });
 
 $('admin-reopen-vote')?.addEventListener('click',()=>{
   _state.phase='teamVote'; _state.questVotes={};
-  if(!DEMO_MODE_ACTIVE && _state.db && window._firebaseModules) {
-    const { ref, update } = window._firebaseModules;
-    update(ref(_state.db),{[`rooms/${_state.roomCode}/phase`]:'teamVote',[`rooms/${_state.roomCode}/questVotes`]:null});
+  if(!DEMO_MODE_ACTIVE && DB.ready()) {
+    DB.update({[`rooms/${_state.roomCode}/phase`]:'teamVote',[`rooms/${_state.roomCode}/questVotes`]:null});
   }
   renderTable(); renderQuestBoard(); renderBottomStrip();
   hideModal('admin-modal'); showToast('Voting re-opened','success');
@@ -4753,9 +5450,8 @@ $('admin-force-phase')?.addEventListener('click',()=>{
 });
 
 $('admin-drop-lobby')?.addEventListener('click',()=>{
-  if(!DEMO_MODE_ACTIVE && _state.db && window._firebaseModules) {
-    const { ref, update } = window._firebaseModules;
-    update(ref(_state.db),{[`rooms/${_state.roomCode}/phase`]:'lobby'});
+  if(!DEMO_MODE_ACTIVE && DB.ready()) {
+    DB.update({[`rooms/${_state.roomCode}/phase`]:'lobby'});
   }
   hideModal('admin-modal');
   $('endgame-overlay').classList.remove('active');
@@ -4765,13 +5461,13 @@ $('admin-drop-lobby')?.addEventListener('click',()=>{
 
 $('admin-terminate')?.addEventListener('click',()=>{
   hideModal('admin-modal');
-  if(!DEMO_MODE_ACTIVE && _state.db && window._firebaseModules && _state.roomCode) {
-    const { ref, update, remove } = window._firebaseModules;
+  if(_state.connMode==='offline' && P2P.mode==='host') clearOfflineHostSnapshot();
+  if(!DEMO_MODE_ACTIVE && DB.ready() && _state.roomCode) {
     // Step 1: broadcast 'terminated' so all clients react (endGame) before data is gone
-    update(ref(_state.db), { [`rooms/${_state.roomCode}/phase`]: 'terminated' })
+    DB.update({ [`rooms/${_state.roomCode}/phase`]: 'terminated' })
       .then(() => {
         // Step 2: after clients have had time to read the signal, purge the room entirely
-        setTimeout(() => remove(ref(_state.db, `rooms/${_state.roomCode}`)).catch(()=>{}), 2000);
+        setTimeout(() => DB.remove(`rooms/${_state.roomCode}`).catch(()=>{}), 2000);
       })
       .catch(()=>{});
   }
@@ -4807,10 +5503,9 @@ $('asset-file-input')?.addEventListener('change',e=>{
     $('asset-confirm-upload').onclick=()=>{
       const key=$('asset-target-select').value;
       _state.customAssets[key]=b64;
-      // Sync to Firebase if live
-      if(!DEMO_MODE_ACTIVE && _state.db && window._firebaseModules) {
-        const { ref, update } = window._firebaseModules;
-        update(ref(_state.db),{[`rooms/${_state.roomCode}/assets/${key}`]:b64});
+      // Sync to the shared room state if live
+      if(!DEMO_MODE_ACTIVE && DB.ready()) {
+        DB.update({[`rooms/${_state.roomCode}/assets/${key}`]:b64});
       }
       showToast(`Asset "${key}" updated!`,'success');
       $('asset-preview-wrap').style.display='none';
@@ -4824,26 +5519,20 @@ $('asset-file-input')?.addEventListener('change',e=>{
    DISCONNECT HANDLING (Live mode)
 ════════════════════════════════════════════════════════════════ */
 function setupDisconnectHandlers() {
-  if(DEMO_MODE_ACTIVE || !_state.db || !window._firebaseModules) return;
-  const { ref, onValue, onDisconnect, set } = window._firebaseModules;
+  if(DEMO_MODE_ACTIVE || !DB.ready()) return;
   const uid=_state.currentUser?.uid;
   if(!uid) return;
 
   // Track my connection
-  const connRef=ref(_state.db,`.info/connected`);
-  onValue(connRef, snap=>{
-    if(snap.val()===true) {
-      const myPresRef=ref(_state.db,`rooms/${_state.roomCode}/players/${uid}/connected`);
-      onDisconnect(myPresRef).set(false);
-      set(myPresRef,true);
+  DB.onConnected(connected=>{
+    if(connected) {
       // I just (re)connected — if the others were waiting on me, ask if I want back in.
       checkReconnectPrompt();
     }
   });
 
   // Watch all player connections to detect/clear a disconnect
-  const playersRef=ref(_state.db,`rooms/${_state.roomCode}/players`);
-  onValue(playersRef, snap=>{
+  DB.onValue(`rooms/${_state.roomCode}/players`, snap=>{
     const data=snap.val()||{};
     const disconnectedEntry=Object.entries(data).find(([id,p])=>!p.connected && id!==uid);
     if(disconnectedEntry) {
@@ -4856,25 +5545,31 @@ function setupDisconnectHandlers() {
   });
 
   // Watch the shared disconnect-resolution state (drives the alert UI for everyone)
-  const discRef=ref(_state.db,`rooms/${_state.roomCode}/disconnectInfo`);
-  onValue(discRef, snap=>renderDisconnectAlert(snap.val()));
+  DB.onValue(`rooms/${_state.roomCode}/disconnectInfo`, snap=>renderDisconnectAlert(snap.val()));
 }
 
 // The first client to notice a peer has dropped stakes out the shared prompt.
 // Won't overwrite an existing decision already in progress for the same (or another) player.
 function initDisconnectChoice(id, name) {
-  if(!_state.db || !window._firebaseModules || !_state.roomCode) return;
+  if(!DB.ready() || !_state.roomCode) return;
   const current=_state.disconnectInfo;
   if(current && current.playerId) return; // a disconnect is already being handled
-  const { ref, set } = window._firebaseModules;
-  set(ref(_state.db,`rooms/${_state.roomCode}/disconnectInfo`), { playerId:id, playerName:name, status:'choice' }).catch(()=>{});
+  DB.set(`rooms/${_state.roomCode}/disconnectInfo`, { playerId:id, playerName:name, status:'choice' }).catch(()=>{});
 }
 
 function clearDisconnectInfo() {
-  if(!_state.db || !window._firebaseModules || !_state.roomCode) return;
+  if(!DB.ready() || !_state.roomCode) return;
   if(!_state.disconnectInfo) return;
-  const { ref, remove } = window._firebaseModules;
-  remove(ref(_state.db,`rooms/${_state.roomCode}/disconnectInfo`)).catch(()=>{});
+  DB.remove(`rooms/${_state.roomCode}/disconnectInfo`).catch(()=>{});
+}
+
+// Whether *I* am hosting the current room — distinct from _state.isAdmin,
+// which only adminDan has. "dan" can also host a room without being admin,
+// and room-host actions (like resolving a disconnect) should key off this.
+function amIRoomHost() {
+  const uid = _state.currentUser?.uid;
+  if(!uid) return false;
+  return !!_state.players.find(p=>p.id===uid)?.isHost;
 }
 
 function renderDisconnectAlert(info) {
@@ -4888,7 +5583,8 @@ function renderDisconnectAlert(info) {
     return;
   }
 
-  const isHost = _state.isAdmin;
+  const isHost = amIRoomHost();
+  const canReconnectViaQR = isHost && _state.connMode==='offline';
 
   $('disconnect-alert').classList.add('active');
   if(info.status==='waiting') {
@@ -4898,30 +5594,42 @@ function renderDisconnectAlert(info) {
     // Only the host can end the game early — everyone else just waits.
     $('disconnect-terminate-btn2').style.display = isHost ? '' : 'none';
     $('disconnect-host-only-note2').style.display = isHost ? 'none' : 'block';
+    $('disconnect-reconnect-btn2').style.display = canReconnectViaQR ? '' : 'none';
   } else {
     $('disconnect-msg').textContent=`${info.playerName} has disconnected. Gameplay is frozen. What would you like to do?`;
     $('disconnect-choice-buttons').style.display='flex';
     $('disconnect-waiting-note').style.display='none';
     $('disconnect-terminate-btn').style.display = isHost ? '' : 'none';
     $('disconnect-host-only-note').style.display = isHost ? 'none' : 'block';
+    $('disconnect-reconnect-btn').style.display = canReconnectViaQR ? '' : 'none';
   }
 }
 
 function terminateGameFromDisconnect() {
-  if(!_state.isAdmin) return; // only the host may terminate the game
-  if(!_state.db || !window._firebaseModules || !_state.roomCode) return;
-  const { ref, update, remove } = window._firebaseModules;
+  if(!amIRoomHost()) return; // only the actual host of this room may terminate it
+  if(!DB.ready() || !_state.roomCode) return;
+  if(_state.connMode==='offline' && P2P.mode==='host') clearOfflineHostSnapshot();
   // Broadcast terminated phase first so all clients react, then purge the room
-  update(ref(_state.db), { [`rooms/${_state.roomCode}/phase`]: 'terminated' })
-    .then(() => setTimeout(() => remove(ref(_state.db, `rooms/${_state.roomCode}`)).catch(()=>{}), 2000))
+  DB.update({ [`rooms/${_state.roomCode}/phase`]: 'terminated' })
+    .then(() => setTimeout(() => DB.remove(`rooms/${_state.roomCode}`).catch(()=>{}), 2000))
     .catch(()=>{});
-  remove(ref(_state.db,`rooms/${_state.roomCode}/disconnectInfo`)).catch(()=>{});
+  DB.remove(`rooms/${_state.roomCode}/disconnectInfo`).catch(()=>{});
 }
 
+// HOST (offline only): re-pair with a specific disconnected player, restoring
+// them to their existing seat instead of adding a brand new one.
+function reconnectDisconnectedPlayer() {
+  if(!amIRoomHost() || _state.connMode!=='offline') return;
+  const info = _state.disconnectInfo;
+  if(!info || !info.playerId) return;
+  offlineHostAddPlayer(info.playerId);
+}
+$('disconnect-reconnect-btn')?.addEventListener('click', reconnectDisconnectedPlayer);
+$('disconnect-reconnect-btn2')?.addEventListener('click', reconnectDisconnectedPlayer);
+
 $('disconnect-wait-btn')?.addEventListener('click', ()=>{
-  if(!_state.db || !window._firebaseModules || !_state.roomCode) return;
-  const { ref, update } = window._firebaseModules;
-  update(ref(_state.db,`rooms/${_state.roomCode}/disconnectInfo`), { status:'waiting' }).catch(e=>showToast(e.message,'error'));
+  if(!DB.ready() || !_state.roomCode) return;
+  DB.update({ [`rooms/${_state.roomCode}/disconnectInfo/status`]: 'waiting' }).catch(e=>showToast(e.message,'error'));
 });
 $('disconnect-terminate-btn')?.addEventListener('click', terminateGameFromDisconnect);
 $('disconnect-terminate-btn2')?.addEventListener('click', terminateGameFromDisconnect);
@@ -4929,10 +5637,9 @@ $('disconnect-terminate-btn2')?.addEventListener('click', terminateGameFromDisco
 // Called whenever my own connection comes back up — asks me if I want back in,
 // but only when the other players explicitly chose to wait for me.
 function checkReconnectPrompt() {
-  if(!_state.db || !window._firebaseModules || !_state.roomCode) return;
+  if(!DB.ready() || !_state.roomCode) return;
   const uid=_state.currentUser?.uid;
-  const { ref, get } = window._firebaseModules;
-  get(ref(_state.db,`rooms/${_state.roomCode}/disconnectInfo`)).then(snap=>{
+  DB.get(`rooms/${_state.roomCode}/disconnectInfo`).then(snap=>{
     const info=snap.val();
     if(info && info.playerId===uid && info.status==='waiting') {
       showModal('reconnect-modal');
@@ -4983,15 +5690,13 @@ function loadGameState(data, fromListener=false) {
 ════════════════════════════════════════════════════════════════ */
 function setupGameListeners() {
   if(DEMO_MODE_ACTIVE) return;
-  if(!_state.db || !window._firebaseModules) return;
-  // Guard: prevent duplicate Firebase subscriptions when loadGameState
-  // triggers enterGameScreen() which would call this function again.
+  if(!DB.ready()) return;
+  // Guard: prevent duplicate subscriptions when loadGameState triggers
+  // enterGameScreen() which would call this function again.
   if(_state.gameListenerActive) return;
   _state.gameListenerActive = true;
 
-  const { ref, onValue } = window._firebaseModules;
-  const rRef=ref(_state.db,`rooms/${_state.roomCode}`);
-  const unsub=onValue(rRef, snap=>{
+  const unsub=DB.onValue(`rooms/${_state.roomCode}`, snap=>{
     const data=snap.val();
     if(!data) {
       // Room was deleted from Firebase (admin wiped it) — treat as terminated
