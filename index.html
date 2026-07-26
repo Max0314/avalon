@@ -11688,10 +11688,11 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
         <div id="offline-join-scan-wrap">
           <p style="font-size:12px;color:var(--parchment-dim);margin-bottom:10px;">Point your camera at the host's connection code.</p>
           <video id="offline-join-scan-video" style="width:100%;border-radius:10px;background:#000;" muted></video>
+          <p style="font-size:10px;color:var(--parchment-dim);margin-top:8px;">Tip: hold about 15–20cm (6–8in) away, keep the whole code in frame, and make sure the host's screen brightness is up.</p>
         </div>
         <div id="offline-join-answer-wrap" style="display:none;">
           <p style="font-size:12px;color:var(--parchment-dim);margin-bottom:10px;">Now show this code back to the host to finish connecting.</p>
-          <canvas id="offline-join-answer-qr" width="220" height="220" style="border-radius:10px;margin:0 auto;display:block;"></canvas>
+          <canvas id="offline-join-answer-qr" width="280" height="280" style="border-radius:10px;margin:0 auto;display:block;max-width:100%;"></canvas>
           <p style="font-size:11px;color:var(--parchment-dim);margin-top:10px;">Waiting for host to scan and confirm…</p>
         </div>
       </div>
@@ -12054,7 +12055,8 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
     <h3 class="modal-title">📡 Pair a Player</h3>
     <div id="offline-pair-step1">
       <p style="font-size:12px;color:var(--parchment-dim);margin-bottom:12px;">Have the joining player scan this code from the "Join Offline Game" screen.</p>
-      <canvas id="offline-pair-qr" width="220" height="220" style="border-radius:10px;margin:0 auto 12px;display:block;"></canvas>
+      <canvas id="offline-pair-qr" width="280" height="280" style="border-radius:10px;margin:0 auto 12px;display:block;max-width:100%;"></canvas>
+      <p style="font-size:10px;color:var(--parchment-dim);margin-bottom:10px;">Tip: hold the phones about 15–20cm (6–8in) apart, keep the whole code in frame, and make sure the screen isn't too dim.</p>
       <p id="offline-pair-status" style="font-size:11px;color:var(--parchment-dim);margin-bottom:14px;"></p>
       <button id="offline-pair-next-btn" class="btn-primary btn-small" style="min-width:180px;">I Have Their Code →</button>
     </div>
@@ -12431,7 +12433,13 @@ function generateQR(canvas, text, size=100) {
     showToast('QR code library failed to load','error');
     return;
   }
-  QRCode.toCanvas(canvas, text, {width:size, margin:1, color:{dark:'#d4af37',light:'#11141a'}}, (err)=>{
+  // Error-correction level 'L' (lowest) rather than the library default 'M':
+  // our payloads (WebRTC connection info) are fairly long text, and lower
+  // correction means less redundant data is encoded, which keeps the QR's
+  // module count down — larger, easier-to-scan squares for the same content.
+  // We don't need the resilience since these are shown on a bright screen,
+  // not printed on a damaged surface.
+  QRCode.toCanvas(canvas, text, {width:size, margin:2, errorCorrectionLevel:'L', color:{dark:'#d4af37',light:'#11141a'}}, (err)=>{
     if (err) {
       console.error('QR generation failed:', err);
       showToast('Could not generate QR code: '+err.message,'error');
@@ -13032,7 +13040,7 @@ async function offlineHostAddPlayer(existingUid=null) {
   $('offline-pair-status').textContent='Generating connection code…';
   try {
     const offerStr = await P2P.hostCreateOffer(connId);
-    generateQR($('offline-pair-qr'), offerStr, 220);
+    generateQR($('offline-pair-qr'), offerStr, 280);
     $('offline-pair-status').textContent='Have the joining player scan this code, then scan their reply below.';
   } catch(e) {
     $('offline-pair-status').textContent='Could not start pairing: '+e.message;
@@ -13107,7 +13115,7 @@ function offlineJoinShowScan(isReconnect=false) {
       const answerStr = await P2P.guestCreateAnswer(text);
       $('offline-join-scan-wrap').style.display='none';
       $('offline-join-answer-wrap').style.display='block';
-      generateQR($('offline-join-answer-qr'), answerStr, 220);
+      generateQR($('offline-join-answer-qr'), answerStr, 280);
       waitForOfflineRoomAndEnter();
     } catch(e) {
       if(!settled) { settled=true; clearTimeout(_state.offlineJoinConnectTimeoutId); _state.offlineJoinConnectTimeoutId=null; }
@@ -13192,7 +13200,23 @@ let _qrScanState = { stream:null, raf:null };
 function startQrScanner(videoElId, onDecoded) {
   const video = $(videoElId);
   if(!video || !window.jsQR) { showToast('Camera scanning unavailable on this device','error'); return; }
-  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(stream=>{
+  // Request a higher resolution than getUserMedia's defaults — QR content
+  // here (WebRTC connection strings) produces fairly dense codes, and a
+  // low-res default stream makes those hard for jsQR to resolve. Falls back
+  // to plain facingMode if a device rejects these constraints.
+  const constraints = {
+    video: {
+      facingMode: 'environment',
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+      advanced: [{ focusMode: 'continuous' }]
+    }
+  };
+  navigator.mediaDevices.getUserMedia(constraints).catch(()=>{
+    // Some devices reject unsupported constraints outright rather than
+    // relaxing them — retry with the bare minimum that always works.
+    return navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+  }).then(stream=>{
     _qrScanState.stream = stream;
     video.srcObject = stream;
     video.setAttribute('playsinline', true);
