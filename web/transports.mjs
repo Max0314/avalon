@@ -11,7 +11,7 @@ export class Online {
     if(!response.ok){const error=new GameError(result.code||'NETWORK',result.message||'操作失败，请重试。');error.view=result.view;throw error;}return result;
   }
   accept(v){if(!v)return;if(this.view?.id===v.id&&v.version<this.view.version)return;this.view=v;this.onView(v);}
-  async boot(){const r=await this.request('/api/session');this.person=r.person;if(r.room){this.accept(r.room);this.connect(r.room.code);}return r;}
+  async boot(){let r;for(let attempt=0;attempt<3;attempt++){try{r=await this.request('/api/session');break;}catch(e){if(attempt===2||e.code!=='NETWORK')throw e;await new Promise(resolve=>setTimeout(resolve,800));}}this.person=r.person;if(r.room){this.accept(r.room);this.connect(r.room.code);}return r;}
   async profile(person){const r=await this.request('/api/profile',person);this.person=r.person;return r.person;}
   async create(settings){let r;try{r=await this.request('/api/rooms',{settings});}catch(e){const b=await this.request('/api/session').catch(()=>null);if(b?.room){this.accept(b.room);this.connect(b.room.code);return b.room;}throw e;}this.accept(r.view);this.connect(r.view.code);return r.view;}
   async join(code){const r=await this.request(`/api/rooms/${code}/join`,{});this.accept(r.view);this.connect(code);return r.view;}
