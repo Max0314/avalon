@@ -2,6 +2,8 @@
 
 为朋友聚会制作的中文阿瓦隆：保留原项目的蓝金卡面和圆桌意象，提供在线好友局与离线扫码同桌局。支持 5～10 人、梅林/刺客、派西维尔/莫甘娜/莫德雷德/奥伯伦、湖中仙女、完整任务与刺杀结算。
 
+[打开阿瓦隆](https://avalon.fribench.cn/) · 2026-10-15 已验证部署 `8e06b72`，在线与离线扫码均保留。
+
 ## 使用
 
 - 在线：填写昵称 → 创建房间 → 分享邀请链接；朋友加入并准备，房主开局。刷新可恢复当前浏览器的座位。
@@ -21,6 +23,7 @@ npm run check
 npm start
 # 打开 http://localhost:3000
 npm run test:e2e
+node tests/layout.mjs
 ```
 
 浏览器测试需要 Playwright Chromium：`npx playwright install chromium`。二维码库与扫码库在构建时打包，运行时不依赖 Firebase、外部 CDN 或 Google Fonts。默认数据写到 `data/avalon.sqlite`，不得提交。
