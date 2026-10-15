@@ -1,0 +1,33 @@
+name: fribench-avalon
+services:
+  app:
+    image: ${AVALON_IMAGE:?Specify a committed release image}
+    restart: unless-stopped
+    init: true
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.50
+    env_file: /etc/fribench/apps/avalon/app.env
+    environment:
+      NODE_OPTIONS: --max-old-space-size=128
+      TRUST_PROXY: "1"
+      RELEASE_SHA: ${AVALON_RELEASE:?Specify the full source commit}
+    ports: ["127.0.0.1:23010:3000"]
+    volumes: ["data:/app/data"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m,uid=1000,gid=1000"]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: "3"}
+volumes:
+  data:
+    name: fribench-avalon-data
