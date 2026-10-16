@@ -6,7 +6,7 @@ self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(c
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('fribench-avalon-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',event=>{
   const req=event.request,url=new URL(req.url);
-  if(req.method!=='GET'||url.origin!==location.origin||url.pathname.startsWith('/api/')||url.pathname==='/healthz'||url.pathname==='/readyz')return;
+  if(req.method!=='GET'||url.origin!==location.origin||url.pathname.startsWith('/api/')||url.pathname.startsWith('/_fribench/')||url.pathname==='/healthz'||url.pathname==='/readyz')return;
   if(req.mode==='navigate')event.respondWith(fetch(req).then(async response=>{if(response.status>=500){const shell=await caches.match('/');if(shell)return shell;}if(response.ok)(await caches.open(CACHE)).put('/',response.clone());return response;}).catch(()=>caches.match('/')));
   else event.respondWith(caches.match(req).then(hit=>hit||fetch(req).then(async response=>{if(response.ok&&(SHELL.includes(url.pathname)||ART.includes(url.pathname)))(await caches.open(CACHE)).put(req,response.clone());return response;})));
 });

@@ -27,6 +27,8 @@ npm run test:e2e
 
 ## 架构与验证
 
+统一登录与正式 PostgreSQL 接入规范见 [统一登录部署](docs/unified-login.md)。原部署文档与下列 SQLite 说明保留为本地和遗留运行说明，当前正式部署按新规范执行；具体上线提交以运维台账为准。
+
 - `shared/engine.mjs`：共用状态机、权限与逐人信息投影。
 - `server/`：原生 HTTP/SSE、SQLite 事务、访客身份、操作去重与重启恢复。
 - `web/`：中文界面、在线传输、本机主持 WebRTC、扫码与离线缓存。

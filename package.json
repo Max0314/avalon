@@ -18,5 +18,8 @@
     "jsqr": "1.4.0",
     "playwright": "1.62.1",
     "qrcode": "1.5.4"
+  },
+  "dependencies": {
+    "pg": "8.23.1"
   }
 }

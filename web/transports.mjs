@@ -3,11 +3,13 @@ import {encodePair,decodePair} from './qr.mjs';
 
 export function actionKey(v) {const g=v?.game;return g?`${g.id}:${g.phase}:${g.questIndex}:${g.leaderId}:${g.proposals.length}`:`${v?.id}:lobby`;}
 export class Online {
-  constructor(onView,onStatus){this.onView=onView;this.onStatus=onStatus;this.kind='online';this.view=null;this.events=null;}
+  constructor(onView,onStatus){this.onView=onView;this.onStatus=onStatus;this.kind='online';this.view=null;this.events=null;this.generation=0;}
   async request(path,data) {
+    const generation=this.generation;
     let response;
     try{response=await fetch(path,{method:data===undefined?'GET':'POST',headers:data===undefined?{}:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data),credentials:'same-origin',signal:AbortSignal.timeout(12000)});}catch{throw new GameError('NETWORK','连接中断，请等待重连后重试。');}
     let result;try{result=await response.json();}catch{throw new GameError('NETWORK','服务暂时没有响应，请稍后重试。');}
+    if(generation!==this.generation)throw new GameError('ACCOUNT_CHANGED','账号已变化，旧请求结果已丢弃。');
     if(!response.ok){const error=new GameError(result.code||'NETWORK',result.message||'操作失败，请重试。');error.view=result.view;throw error;}return result;
   }
   accept(v){if(!v)return;if(this.view?.id===v.id&&v.version<this.view.version)return;this.view=v;this.onView(v);}
@@ -28,7 +30,7 @@ export class Online {
     }
     throw new GameError('STALE_VERSION','大家正在同时操作，请稍后再试。');
   }
-  close(){this.events?.close();this.events=null;}
+  close(){this.generation++;this.events?.close();this.events=null;this.view=null;}
 }
 
 const HOST_KEY='fribench.avalon.offline.host.v1',SEATS_KEY='fribench.avalon.offline.seats.v1';
