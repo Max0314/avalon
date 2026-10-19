@@ -20,7 +20,7 @@ for(const url of [...art,'/icons/app-icon.png']){const path=url.slice(1);if(!fil
 for(const a of AVATARS){const url='/avatars/v1/'+a.id+'.webp';art.push(url);hash.update(await readFile(url.slice(1)));}
 const digest=hash.digest('hex').slice(0,16);
 const worker=template.replaceAll('__BUILD_ID__',digest).replace('__ART_FILES__',JSON.stringify(art));
-await writeFile('.dist/index.html',(await readFile('index.html','utf8')).replace('/assets/app.js',`/assets/app-${digest}.js`),'utf8');
+await writeFile('.dist/index.html',(await readFile('index.html','utf8')).replace('/assets/app.js',`/assets/app-${digest}.js`).replace('/assets/styles.css',`/assets/styles-${digest}.css`),'utf8');
 await writeFile('.dist/sw.js',worker,'utf8');
 const licenses=await Promise.all([['qrcode','license'],['jsqr','LICENSE']].map(async([name,file])=>`${name}\n${await readFile(`node_modules/${name}/${file}`,'utf8')}\n`));
 await writeFile('.dist/THIRD-PARTY-LICENSES.txt',licenses.join('\n'),'utf8');

@@ -1,6 +1,6 @@
 // Built with a content-derived version; never cache an API response or a room view.
 const CACHE='fribench-avalon-__BUILD_ID__';
-const SHELL=['/','/assets/app-__BUILD_ID__.js','/assets/styles.css','/manifest.json','/icons/app-icon.png'];
+const SHELL=['/','/assets/app-__BUILD_ID__.js','/assets/styles-__BUILD_ID__.css','/manifest.json','/icons/app-icon.png'];
 const ART=__ART_FILES__;
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('fribench-avalon-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));

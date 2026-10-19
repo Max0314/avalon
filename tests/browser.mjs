@@ -28,7 +28,8 @@ async function pair(host,guest){
 }
 try{
   console.log('在线：5 个独立访客浏览器，完整三次任务及刺杀流程');
-  const pages=[];for(let i=0;i<5;i++)pages.push(await player('在线玩家'+(i+1),i===4));
+  const pages=[];for(let i=0;i<5;i++)pages.push(await player(i===4?'长昵称'.repeat(10):'在线玩家'+(i+1),i===4));
+  assert.match(await pages[0].locator('link[rel="stylesheet"]').getAttribute('href'),/^\/assets\/styles-[a-f0-9]{16}\.css$/,'升级不复用旧 SW 的固定样式 URL');
   await click(pages[0],'create-online');const code=await pages[0].locator('.room-code').textContent();
   for(const p of pages.slice(1)){await p.locator('#join-code').fill(code);await click(p,'join-online');await p.locator('.room-code').waitFor();}
   for(const p of pages)await click(p,'ready');await click(pages[0],'start');
@@ -38,6 +39,7 @@ try{
   await pages[0].locator('#peek-role').first().click();await click(pages[0],'modal-close');assert.equal((await snapshot(pages[0])).game.phase,'reveal');
   for(const p of pages)await reveal(p);
   const views=await Promise.all(pages.map(snapshot));const ids=views.map(v=>v.me),good=views.filter(v=>['merlin','percival','servant'].includes(v.game.myRole)).map(v=>v.me);
+  assert(await pages[4].evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'30 字昵称在手机牌桌不产生横向溢出');
   assert.equal(good.length,3);
   for(let round=0;round<3;round++){
     await phase(pages[0],'队长组队');const v=await snapshot(pages[0]),leader=pages[ids.indexOf(v.game.leaderId)],team=good.slice(0,v.game.needed);
