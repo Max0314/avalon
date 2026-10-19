@@ -6,3 +6,5 @@
 .round-table[data-count="9"] .seat,.round-table[data-count="10"] .seat{width:clamp(64px,12%,90px)}
 @media(max-width:600px){.round-table[data-count="9"],.round-table[data-count="10"]{height:620px}.round-table[data-count="9"] .seat,.round-table[data-count="10"] .seat{width:clamp(56px,18vw,72px)}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+:root{--journal-bg:#192635;--journal-ink:#ede4cf}.game-avatar-picker summary{color:var(--gold)}.game-avatar-grid .avatar-choice{min-width:0;font-size:11px}.roster-icon .game-avatar{width:38px;height:38px}.seat-icon .game-avatar{width:32px;height:32px}.end-role .game-avatar{width:28px;height:28px;display:inline-block;margin:0 4px 0 0;vertical-align:middle}.journal-body h3{margin-top:22px}.profile-account-use{border-color:#ad8b5259}.game-avatar-grid button:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+/* Avatars are player identity only; original role cards remain untouched. */

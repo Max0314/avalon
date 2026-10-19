@@ -48,6 +48,8 @@ try{
   }
   await phase(pages[0],'刺杀梅林');const v=await snapshot(pages[0]),assassin=pages[ids.indexOf(v.game.assassinId)],target=views.find(v=>v.game.myRole==='percival').me;
   await assassin.locator(`[data-seat="${target}"]`).click();await click(assassin,'assassinate');await click(assassin,'confirm-action');await pages[0].getByText('好人守住了卡美洛',{exact:true}).waitFor();
+  console.log('游戏档案：游客完整记录、详情、排行榜空态和常玩伙伴入口');
+  await click(pages[0],'player-records');await pages[0].locator('.journal-numbers b').first().filter({hasText:'1'}).waitFor();await pages[0].locator('[data-journal-match]').first().click();await pages[0].locator('.journal-detail').getByText('本场详情',{exact:true}).waitFor();assert.equal(await pages[0].locator('[data-journal-consent]').count(),0);await pages[0].getByRole('button',{name:'排行榜',exact:true}).click();await pages[0].getByText('暂无满足条件且自愿公开的玩家。普通游玩不要求参加榜单。',{exact:true}).waitFor();await pages[0].getByRole('button',{name:'常玩伙伴',exact:true}).click();await pages[0].getByText('和登录的朋友完成对局后，这里会留下常玩伙伴。',{exact:true}).waitFor();await click(pages[0],'modal-close');
   await click(pages[0],'rematch');await pages[4].reload();await pages[4].locator('.room-code').waitFor();assert.equal((await snapshot(pages[4])).me,ids[4]);assert.equal((await snapshot(pages[4])).players.length,5);
   console.log('离线：5 个独立浏览器实际 WebRTC 连接、二维码解码、刷新恢复座位');
   const off=[];for(let i=0;i<5;i++)off.push(await player('同桌玩家'+(i+1),i===4));
@@ -59,11 +61,13 @@ try{
   await off[4].screenshot({path:'test-results/mobile-round-table.png',fullPage:true});
   assert(await off[4].evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'390px 页面无横向溢出');
   for(let turn=0;turn<5;turn++){
+    await Promise.all(off.map(p=>phase(p,'队长组队')));
     const leader=await(async()=>{for(const p of off)if(await p.locator('#nominate').count())return p;throw new Error('没有队长');})();
     for(const seat of (await leader.locator('[data-seat]').all()).slice(0,2))await seat.click();await click(leader,'nominate');for(const p of off)await click(p,'vote-no');
     if(turn<4)await phase(off[0],'队长组队');
   }
   await off[0].getByText('邪恶笼罩了卡美洛',{exact:true}).waitFor();
+  await click(off[0],'player-records');await click(off[0],'offline-records');await off[0].getByRole('heading',{name:'离线记录 · 仅本机'}).waitFor();assert.equal(await off[0].locator('#modal .notice').count(),1);await click(off[0],'modal-close');
   await off[0].reload();await off[0].locator('#restore-offline').waitFor();await click(off[0],'restore-offline');await off[0].getByText('邪恶笼罩了卡美洛',{exact:true}).waitFor();
   console.log('离线缓存：准备卡面后，网络关闭仍可重新打开并创建本机牌桌');
   const cached=await player('缓存玩家');await click(cached,'prepare-offline');await cached.getByText('离线素材已准备好。断网后可再次打开本站或主屏幕入口。',{exact:true}).waitFor();

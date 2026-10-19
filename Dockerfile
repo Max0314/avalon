@@ -17,6 +17,7 @@ COPY tools/backup.mjs ./tools/backup.mjs
 COPY index.html manifest.json ./
 COPY cards ./cards
 COPY icons ./icons
+COPY avatars ./avatars
 RUN mkdir -p /app/data && chown node:node /app/data
 USER node
 EXPOSE 3000

@@ -3,6 +3,8 @@ import {createHash,randomBytes} from 'node:crypto';
 import {mkdirSync,chmodSync} from 'node:fs';
 import {dirname} from 'node:path';
 import {applyCommand,createRoom,joinRoom,nickname,GameError,AVATARS} from '../shared/engine.mjs';
+import {PlayerJournal,journalSchema} from '../shared/fribench-game-kit/journal.mjs';
+import {captureTransition,settleGame} from './journal.mjs';
 
 export const hash=value=>createHash('sha256').update(value).digest('hex');
 export class Store {
@@ -15,6 +17,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS rooms (code TEXT PRIMARY KEY, state TEXT NOT NULL, updated INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS receipts (room TEXT NOT NULL, actor TEXT NOT NULL, id TEXT NOT NULL, fingerprint TEXT NOT NULL, version INTEGER NOT NULL, PRIMARY KEY(room,actor,id), FOREIGN KEY(room) REFERENCES rooms(code) ON DELETE CASCADE);`);
     if(path!==':memory:')chmodSync(path,0o600);
+    this.db.exec(journalSchema());this.journal=new PlayerJournal({write:(sql,...values)=>this.db.prepare(sql).run(...values),query:async(sql,...values)=>this.db.prepare(sql).all(...values),now});
   }
   session(secret) {
     if(!secret||!/^[a-f0-9]{64}$/.test(secret))return null;
@@ -64,6 +67,7 @@ export class Store {
       }
       if(room.version!==command.version)throw new GameError('STALE_VERSION','牌桌已更新，正在同步，请稍后重试。');
       const next=applyCommand(room,person.id,command.type,command.payload,{now:this.now(),online});
+      captureTransition(this,room,next,this.now());
       this.save(next);
       this.db.prepare('INSERT INTO receipts VALUES (?,?,?,?,?)').run(code,person.id,command.id,fingerprint,next.version);
       if(command.type==='profile')this.profile(person,command.payload.name,command.payload.avatar);
@@ -71,8 +75,11 @@ export class Store {
     }catch(e){this.db.exec('ROLLBACK');throw e;}
   }
   cleanup() {
+    this.db.exec('BEGIN IMMEDIATE');try{
+    for(const row of this.db.prepare('SELECT state FROM rooms WHERE updated<?').all(this.now()-6*3600000)){const room=JSON.parse(row.state);settleGame(this,room,room.game?.phase==='finished'?'completed':'aborted',this.now());}
     this.db.prepare('DELETE FROM rooms WHERE updated<?').run(this.now()-6*3600000);
     this.db.prepare('DELETE FROM sessions WHERE expires<?').run(this.now());
+    this.db.exec('COMMIT');}catch(error){this.db.exec('ROLLBACK');throw error;}
   }
   close(){this.db.close();}
 }

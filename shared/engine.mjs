@@ -1,4 +1,5 @@
 // Pure, shared rules. The online server / offline host owns the full state.
+import {AVATARS as CATALOGUE} from './fribench-game-kit/avatars.mjs';
 export class GameError extends Error {
   constructor(code, message) { super(message); this.code = code; }
 }
@@ -16,7 +17,7 @@ export const ROLES = {
   minion:{name:'莫德雷德的爪牙',side:'evil',image:'minion_of_mordred.png',description:'认识除奥伯伦以外的邪恶同伴。可提交任务成功或失败，配合阵营完成目标。'},
 };
 export const DEFAULT_SETTINGS = {percival:true,morgana:true,mordred:false,oberon:false,lady:false};
-export const AVATARS = ['🧙','🦊','🦉','🐺','🐻','🐰','🦁','🐯','🐼','🐸','🐧','🦄'];
+export const AVATARS = CATALOGUE.map(a=>a.id);
 export function randomInt(n) {
   const max = Math.floor(0x100000000 / n) * n;
   const value = new Uint32Array(1);
@@ -32,8 +33,7 @@ export function nickname(input) {
   if (typeof input !== 'string') fail('BAD_NAME','请填写昵称。');
   const name = input.trim().normalize('NFKC');
   if (!name || /[\p{Cc}\p{Cf}<>]/u.test(name)) fail('BAD_NAME','昵称不能包含控制字符或尖括号。');
-  const width = [...name].reduce((n,c)=>n+(/[\u0000-\u00ff]/u.test(c)?1:2),0);
-  if (width>16) fail('BAD_NAME','昵称最多 8 个汉字或 16 个英文字符，可混合使用。');
+  if ([...name].length>30) fail('BAD_NAME','昵称最多 30 个字符。');
   return name;
 }
 export function settings(input = {}) {
@@ -81,6 +81,7 @@ export function applyCommand(original, actorId, type, payload = {}, context = {}
   payloadKeys(payload,permitted[type]);
   switch(type) {
     case 'profile':
+      if(g&&g.phase!=='finished')fail('GAME_RUNNING','本局昵称和头像已固定，请在大厅或结算后修改。');
       actor.name=nickname(payload.name);
       if (!AVATARS.includes(payload.avatar)) fail('BAD_AVATAR','请选择提供的头像。');
       actor.avatar=payload.avatar;break;

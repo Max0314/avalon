@@ -9,6 +9,7 @@ import {accountClient} from './account.mjs';
 import {createHmac,timingSafeEqual} from 'node:crypto';
 import {hash} from './store.mjs';
 import {playerView,GameError,ROLES,AVATARS} from '../shared/engine.mjs';
+import {accountAvatar,playerName,AVATARS as CATALOGUE} from '../shared/fribench-game-kit/avatars.mjs';
 
 const ROOT=fileURLToPath(new URL('../',import.meta.url));
 const JSON_LIMIT=8192;
@@ -87,31 +88,48 @@ export function buildApp({repository,dbPath=':memory:',publicOrigin='http://loca
         limit(`ip:${clientIP}`,900);
         if(path==='/api/session'&&req.method==='GET') {
           limit(`session:${clientIP}`,90);person=identify(req,res,true);
-          const current=store.membership(person.id);respond(res,200,{person:{id:person.id,name:person.name,avatar:person.avatar},room:current?view(current,person.id):null});return;
+          const current=store.membership(person.id),account=accounts.get(req);
+          if(account&&person.profile_source!=='custom'&&(!current?.game||current.game.phase==='finished')){const name=playerName(account.name),avatar=accountAvatar(account.picture);if(person.name!==name||person.avatar!==avatar){if(current){const r=store.command(current.code,person,{id:crypto.randomUUID(),version:current.version,type:'profile',payload:{name,avatar}},online(current.code));Object.assign(current,r.room);broadcast(r.room);}person=store.profile(person,name,avatar,'account');}}
+          if(account)store.journal.profile(account.sub,playerName(account.name),accountAvatar(account.picture));respond(res,200,{person:{id:person.id,name:person.name,avatar:person.avatar},room:current?view(current,person.id):null});return;
         }
         person=identify(req,res);
-        if(path==='/api/account'&&req.method==='GET'){const account=accounts.get(req);respond(res,200,{signedIn:Boolean(account),guestClaimAvailable:account?!store.claimRecord?.(account.sub):false});return;}
+        if(path==='/api/account'&&req.method==='GET'){const account=accounts.get(req);respond(res,200,{signedIn:Boolean(account),profile:account?{name:playerName(account.name),avatar:accountAvatar(account.picture)}:null,guestClaimAvailable:account?!store.claimRecord?.(account.sub):false});return;}
+        if(path.startsWith('/api/player')){
+          const account=accounts.get(req),owner={accountId:account?.sub,seatId:person.id};
+          if(path==='/api/player/privacy'&&req.method==='POST'){const data=await body(req);exact(data,['publicRanking']);if(!account)throw new GameError('UNAUTHENTICATED','请先登录账号。');if(typeof data.publicRanking!=='boolean')throw new GameError('BAD_COMMAND','请选择是否公开排行。');store.journal.profile(account.sub,playerName(account.name),accountAvatar(account.picture));store.journal.privacy(account.sub,data.publicRanking);respond(res,200,{saved:true});return;}
+          if(req.method!=='GET')throw new GameError('BAD_METHOD','此接口只能读取统计。');
+          if(path==='/api/player/companions'){respond(res,200,{entries:await store.journal.companions(owner)});return;}
+          const detail=path.match(/^\/api\/player\/matches\/([a-f0-9-]{36})$/);
+          if(detail){const record=await store.journal.detail(owner,detail[1]);if(!record)throw new GameError('NOT_FOUND','没有可访问的对局。');respond(res,200,record);return;}
+          const page=Number(url.searchParams.get('page')??0),period=url.searchParams.get('period')??'all',mode=url.searchParams.get('mode')??'all',metric=url.searchParams.get('metric')??'wins';
+          if(!Number.isSafeInteger(page)||page<0||page>100000||!['all','month'].includes(period)||!['all','online'].includes(mode)||!['wins','games','winRate'].includes(metric))throw new GameError('BAD_COMMAND','请选择有效的统计条件。');
+          if(path==='/api/player'){respond(res,200,await store.journal.read(owner,{page,period,mode}));return;}
+          if(path==='/api/player/leaderboard'){respond(res,200,await store.journal.leaderboard({period,mode:'online',metric}));return;}
+          throw new GameError('NOT_FOUND','接口不存在。');
+        }
         if(['/api/account/guest-preview','/api/account/guest-claim'].includes(path)&&req.method==='POST'){
           const account=accounts.get(req);if(!account||!store.claim)throw new GameError('LOGIN_REQUIRED','请先登录账号。');
           const data=await body(req),claim=store.claimRecord(account.sub),isPreview=path.endsWith('guest-preview');exact(data,isPreview?[]:['previewToken','confirm']);
           const sign=payload=>createHmac('sha256',previewKey).update(JSON.stringify([account.sub,payload])).digest('hex');
-          const guest=store.session(jar(req)[guestCookie]),room=guest&&!guest.account_id?store.membership(guest.id):null;
+          const guest=store.session(jar(req)[guestCookie]),room=guest&&!guest.account_id?store.membership(guest.id):null,records=guest&&!guest.account_id?await store.journal.guestCount(guest.id):0;
           if(isPreview){
             if(claim)throw new GameError('CLAIM_ALREADY_USED','本账号在阿瓦隆的游客认领机会已使用。');
-            if(!room)throw new GameError('NO_GUEST_ROOM','此浏览器没有可认领的游客牌桌。');if(store.membership(person.id))throw new GameError('ACCOUNT_ROOM_EXISTS','账号已有房间，不能覆盖。');
-            const payload=Buffer.from(JSON.stringify({guest:hash(guest.secret_hash),room:room.code,version:room.version,expires:now()+30*60000})).toString('base64url');respond(res,200,{previewToken:payload+'.'+sign(payload),code:room.code,name:guest.name,players:room.players.length,consumesOpportunity:false});return;
+            if(!guest||guest.account_id||!room&&!records)throw new GameError('NO_GUEST_ROOM','此浏览器没有可认领的游客牌桌或战绩。');if(store.membership(person.id))throw new GameError('ACCOUNT_ROOM_EXISTS','账号已有房间，不能覆盖。');
+            const payload=Buffer.from(JSON.stringify({guest:hash(guest.secret_hash),room:room?.code??null,version:room?.version??0,records,expires:now()+30*60000})).toString('base64url');respond(res,200,{previewToken:payload+'.'+sign(payload),code:room?.code??null,name:guest.name,players:room?.players.length??0,records,consumesOpportunity:false});return;
           }
           if(data.confirm!==true||typeof data.previewToken!=='string'||data.previewToken.length>2000)throw new GameError('CONFIRM_REQUIRED','请预览后明确确认认领。');
           const[payload,signature,...rest]=data.previewToken.split('.');if(!payload||!signature||rest.length||!timingSafeEqual(Buffer.from(hash(sign(payload)),'hex'),Buffer.from(hash(signature),'hex')))throw new GameError('PREVIEW_EXPIRED','预览已失效，请重新预览。');
           const preview=JSON.parse(Buffer.from(payload,'base64url').toString());if(preview.expires<=now())throw new GameError('PREVIEW_EXPIRED','预览已过期。');
-          if(claim){if(claim.preview_hash===hash(data.previewToken)){respond(res,200,{claimed:true,roomId:claim.room});return;}throw new GameError('CLAIM_ALREADY_USED','本服务认领机会已使用。');}
-          if(!room||preview.guest!==hash(guest.secret_hash)||preview.room!==room.code||preview.version!==room.version)throw new GameError('PREVIEW_EXPIRED','牌桌已变化，请重新预览。');
-          store.claim({...account,id:person.id},guest,room,hash(data.previewToken));actor.publish(()=>{for(const stream of streams.values())if(stream.person.id===guest.id||stream.person.id===person.id)stream.res.end();});setCookie(res,guestCookie,'',0);respond(res,200,{claimed:true,roomId:room.code});return;
+          if(claim){if(claim.preview_hash===hash(data.previewToken)){respond(res,200,{claimed:true,roomId:claim.room||null});return;}throw new GameError('CLAIM_ALREADY_USED','本服务认领机会已使用。');}
+          if(!guest||guest.account_id||preview.guest!==hash(guest.secret_hash)||preview.room!==(room?.code??null)||preview.version!==(room?.version??0)||preview.records!==records)throw new GameError('PREVIEW_EXPIRED','牌桌已变化，请重新预览。');
+          store.claim({...account,id:person.id},guest,room,hash(data.previewToken));actor.publish(()=>{for(const stream of streams.values())if(stream.person.id===guest.id||stream.person.id===person.id)stream.res.end();});setCookie(res,guestCookie,'',0);respond(res,200,{claimed:true,roomId:room?.code??null});return;
         }
         if(path==='/api/profile'&&req.method==='POST') {
-          const data=await body(req);exact(data,['name','avatar']);
-          const current=store.membership(person.id);if(current)throw new GameError('ALREADY_IN_ROOM','请在房间中修改自己的资料。');
-          const p=store.profile(person,data.name,data.avatar);respond(res,200,{person:{id:p.id,name:p.name,avatar:p.avatar}});return;
+          let data=await body(req);const account=accounts.get(req);
+          if(data.useAccount===true){exact(data,['useAccount']);if(!account)throw new GameError('UNAUTHENTICATED','请先登录账号。');data={name:playerName(account.name),avatar:accountAvatar(account.picture)};}else exact(data,['name','avatar']);
+          const current=store.membership(person.id);if(current?.game&&current.game.phase!=='finished')throw new GameError('GAME_RUNNING','本局昵称和头像已固定，请在大厅或结算后修改。');
+          if(current){const result=store.command(current.code,person,{id:crypto.randomUUID(),version:current.version,type:'profile',payload:data},online(current.code));broadcast(result.room);}
+          const p=store.profile(person,data.name,data.avatar,(await body(req)).useAccount===true?'account':'custom');respond(res,200,{person:{id:p.id,name:p.name,avatar:p.avatar}});return;
         }
         if(path==='/api/rooms'&&req.method==='POST') {
           limit(`create:${person.id}`,6);limit(`create-ip:${clientIP}`,15);
@@ -145,6 +163,7 @@ export function buildApp({repository,dbPath=':memory:',publicOrigin='http://loca
       const fixed={'/':['.dist/index.html','text/html; charset=utf-8'],'/index.html':['.dist/index.html','text/html; charset=utf-8'],'/assets/app.js':['.dist/app.js','text/javascript; charset=utf-8'],'/assets/styles.css':['.dist/styles.css','text/css; charset=utf-8'],'/manifest.json':['manifest.json','application/manifest+json'],'/sw.js':['.dist/sw.js','text/javascript; charset=utf-8'],'/licenses.txt':['.dist/THIRD-PARTY-LICENSES.txt','text/plain; charset=utf-8']};
       if(/^\/assets\/app-[a-f0-9]{16}\.js$/.test(path)){file='.dist/app.js';mime='text/javascript; charset=utf-8';}
       else if(fixed[path]) [file,mime]=fixed[path];
+      else if(/^\/avatars\/v1\/[a-z0-9-]+\.webp$/.test(path)&&CATALOGUE.some(a=>path==='/avatars/v1/'+a.id+'.webp')){file=path.slice(1);mime='image/webp';}
       else if(/^\/cards\/[a-z0-9_-]+\.png$/.test(path)&&Object.values(ROLES).some(r=>path===`/cards/${r.image}`)||['/cards/quest_success.png','/cards/quest_fail.png','/icons/app-icon.png','/icons/lady_token.png'].includes(path)){file=path.slice(1);mime='image/png';}
       else {json(res,404,{message:'页面不存在。'});return;}
       const full=resolve(root,file);if(!full.startsWith(resolve(root)))throw new Error('Invalid static path');
