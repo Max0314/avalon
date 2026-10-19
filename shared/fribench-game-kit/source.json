@@ -4,8 +4,8 @@
   "avatars": 33,
   "hashes": {
     "journal.mjs": "ed73efb11359d96c2867418b4089238861eddaa3b8d06138ffedef0224a4b38a",
-    "journal-view.mjs": "2f933cdc29d450b9014464a6ec5e1f47f29112137066e0be512b15c96c4efb37",
-    "journal.css": "1e9748c3456cd93664642b6fd5dcaf21633170255ab2f45c51cf4aad796533db",
+    "journal-view.mjs": "b4fce4fda2428199a6f0f8e7b053498efa4b8df012c4393877d563e33d9c1345",
+    "journal.css": "12891c09d82b3aa8fbbd5a196e7dd5d5af7453aa9d3b433cbc41dfc89b6696e4",
     "index.d.mts": "a5a2fa3cf23d3992085a49e3bc92f23c76d11d623182d2c7413d2c46f63cfd98",
     "verify.mjs": "36ed45a78a7557f96595128b4d428aeb91f112adcd90a45e75f120aa1ec9b1e8",
     "avatars.mjs": "3c13dcf92949b968072f2f994332708761f4be77799b86386bc89b788101b840",
