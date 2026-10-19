@@ -2,3 +2,5 @@
 *.sh text eol=lf
 Dockerfile text eol=lf
 *.png binary
+shared/fribench-game-kit/** text eol=lf
+avatars/v1/*.webp binary
