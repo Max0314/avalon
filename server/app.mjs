@@ -9,7 +9,7 @@ import {accountClient} from './account.mjs';
 import {createHmac,timingSafeEqual} from 'node:crypto';
 import {hash} from './store.mjs';
 import {playerView,GameError,ROLES,AVATARS} from '../shared/engine.mjs';
-import {accountAvatar,playerName,AVATARS as CATALOGUE} from '../shared/fribench-game-kit/avatars.mjs';
+import {accountAvatar,playerName,avatarAssetPaths} from '../shared/fribench-game-kit/avatars.mjs';
 
 const ROOT=fileURLToPath(new URL('../',import.meta.url));
 const JSON_LIMIT=8192;
@@ -164,7 +164,7 @@ export function buildApp({repository,dbPath=':memory:',publicOrigin='http://loca
       if(/^\/assets\/app-[a-f0-9]{16}\.js$/.test(path)){file='.dist/app.js';mime='text/javascript; charset=utf-8';}
       else if(/^\/assets\/styles-[a-f0-9]{16}\.css$/.test(path)){file='.dist/styles.css';mime='text/css; charset=utf-8';}
       else if(fixed[path]) [file,mime]=fixed[path];
-      else if(/^\/avatars\/v1\/[a-z0-9-]+\.webp$/.test(path)&&CATALOGUE.some(a=>path==='/avatars/v1/'+a.id+'.webp')){file=path.slice(1);mime='image/webp';}
+      else if(avatarAssetPaths.includes(path)){file=path.slice(1);mime='image/webp';}
       else if(/^\/cards\/[a-z0-9_-]+\.png$/.test(path)&&Object.values(ROLES).some(r=>path===`/cards/${r.image}`)||['/cards/quest_success.png','/cards/quest_fail.png','/icons/app-icon.png','/icons/lady_token.png'].includes(path)){file=path.slice(1);mime='image/png';}
       else {json(res,404,{message:'页面不存在。'});return;}
       const full=resolve(root,file);if(!full.startsWith(resolve(root)))throw new Error('Invalid static path');

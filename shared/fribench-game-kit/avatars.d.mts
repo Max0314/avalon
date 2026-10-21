@@ -1,4 +1,6 @@
 export const AVATARS: {id:string;name:string;category:string}[];
+export const PERSISTED_AVATAR_IDS:string[];
+export const avatarAssetPaths:string[];
 export const DEFAULT_AVATAR:string;
 export function avatarId(value:unknown):string;
 export function avatarIndex(value:unknown):number;

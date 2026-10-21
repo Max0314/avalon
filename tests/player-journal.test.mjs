@@ -4,14 +4,14 @@ import {randomBytes,randomUUID} from 'node:crypto';
 import pg from 'pg';
 import {PostgresStore} from '../server/postgres-store.mjs';
 import {buildApp} from '../server/app.mjs';
-const account=async header=>{const id=header?.match(/fixture=(p[0-5])/)?.[1];return id?{sub:id+'-private',name:id==='p0'?'中央昵称'.repeat(7):'棋友'+id,picture:'https://auth.fribench.cn/assets/avatars/v1/snow-king.webp'}:null;};
+const account=async header=>{const id=header?.match(/fixture=(p[0-5])/)?.[1];return id?{sub:id+'-private',name:id==='p0'?'中央昵称'.repeat(7):'棋友'+id,picture:id==='p0'?'https://auth.fribench.cn/assets/avatars/v2/pet-eleven.webp':'https://auth.fribench.cn/assets/avatars/v1/snow-king.webp'}:null;};
 test('PostgreSQL full online match, account profile, hidden-role protection, stable journal, consent and participant isolation',{skip:!process.env.TEST_DATABASE_URL,timeout:180000},async()=>{
   const url=process.env.TEST_DATABASE_URL,schema='avalon_journal_'+randomBytes(7).toString('hex'),admin=new pg.Pool({connectionString:url,max:1});await admin.query(`CREATE SCHEMA "${schema}"`);let app,base,repo;const streams=[];let time=Date.now(),centralName='中央昵称'.repeat(7);
   const accountResolver=async h=>{const a=await account(h);return a?.sub==='p0-private'?{...a,name:centralName}:a;};
   async function start(){repo=await PostgresStore.open(url,{schema,now:()=>time});app=buildApp({repository:repo,resolveAccount:accountResolver,rateLimit:false,now:()=>time});await new Promise(ok=>app.server.listen(0,'127.0.0.1',ok));base=`http://127.0.0.1:${app.server.address().port}`;app.publicOrigin=base;}
   async function req(path,cookie='',data){const r=await fetch(base+path,{method:data===undefined?'GET':'POST',headers:{cookie,...(data===undefined?{}:{origin:base,'content-type':'application/json'})},body:data===undefined?undefined:JSON.stringify(data)});return{status:r.status,value:await r.json(),cookie:r.headers.getSetCookie().map(v=>v.split(';')[0]).join('; ')};}
   try{await start();const players=[];
-    for(let i=0;i<5;i++){const r=await req('/api/session','fixture=p'+i);assert.equal(r.value.person.avatar,'snow-king');players.push({id:r.value.person.id,cookie:'fixture=p'+i+'; '+r.cookie});}
+    for(let i=0;i<5;i++){const r=await req('/api/session','fixture=p'+i);assert.equal(r.value.person.avatar,i===0?'pet-eleven':'snow-king');players.push({id:r.value.person.id,cookie:'fixture=p'+i+'; '+r.cookie});}
     const host=players[0];assert.equal((await req('/api/session',host.cookie)).value.person.name.length,28);
     assert.equal((await req('/api/profile',host.cookie,{name:'本局别名',avatar:'bench-chill'})).status,200);centralName='更新的中央昵称';assert.equal((await req('/api/session',host.cookie)).value.person.name,'本局别名');assert.equal((await req('/api/profile',host.cookie,{useAccount:true})).value.person.name,centralName);centralName='中央昵称'.repeat(7);assert.equal((await req('/api/session',host.cookie)).value.person.name.length,28);
     const created=await req('/api/rooms',host.cookie,{}),code=created.value.view.code;

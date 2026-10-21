@@ -1,5 +1,5 @@
 // Pure, shared rules. The online server / offline host owns the full state.
-import {AVATARS as CATALOGUE} from './fribench-game-kit/avatars.mjs';
+import {PERSISTED_AVATAR_IDS} from './fribench-game-kit/avatars.mjs';
 export class GameError extends Error {
   constructor(code, message) { super(message); this.code = code; }
 }
@@ -17,7 +17,7 @@ export const ROLES = {
   minion:{name:'莫德雷德的爪牙',side:'evil',image:'minion_of_mordred.png',description:'认识除奥伯伦以外的邪恶同伴。可提交任务成功或失败，配合阵营完成目标。'},
 };
 export const DEFAULT_SETTINGS = {percival:true,morgana:true,mordred:false,oberon:false,lady:false};
-export const AVATARS = CATALOGUE.map(a=>a.id);
+export const AVATARS = PERSISTED_AVATAR_IDS;
 export function randomInt(n) {
   const max = Math.floor(0x100000000 / n) * n;
   const value = new Uint32Array(1);

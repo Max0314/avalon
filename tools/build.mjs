@@ -3,7 +3,7 @@ import {build} from 'esbuild';
 import {mkdir,writeFile,readFile,readdir} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {ROLES} from '../shared/engine.mjs';
-import {AVATARS} from '../shared/fribench-game-kit/avatars.mjs';
+import {avatarAssetPaths} from '../shared/fribench-game-kit/avatars.mjs';
 await mkdir('.dist',{recursive:true});
 await build({entryPoints:['web/app.mjs'],bundle:true,format:'esm',target:['es2022'],outfile:'.dist/app.js',minify:true,legalComments:'eof'});
 let styles=await readFile('web/styles.css','utf8')+'\n'+await readFile('shared/fribench-game-kit/journal.css','utf8');
@@ -17,7 +17,7 @@ const files=new Set([...(await readdir('cards')).map(f=>'cards/'+f),...(await re
 const hash=createHash('sha256').update(await readFile('.dist/app.js')).update(styles).update(await readFile('index.html')).update(await readFile('manifest.json'));
 const template=await readFile('sw.js','utf8');hash.update(template);
 for(const url of [...art,'/icons/app-icon.png']){const path=url.slice(1);if(!files.has(path))throw new Error(`Missing asset or case mismatch: ${path}`);const bytes=await readFile(path);if(bytes.subarray(0,8).toString('hex')!=='89504e470d0a1a0a')throw new Error(`Invalid PNG: ${path}`);hash.update(bytes);}
-for(const a of AVATARS){const url='/avatars/v1/'+a.id+'.webp';art.push(url);hash.update(await readFile(url.slice(1)));}
+for(const url of avatarAssetPaths){art.push(url);hash.update(await readFile(url.slice(1)));}
 const digest=hash.digest('hex').slice(0,16);
 const worker=template.replaceAll('__BUILD_ID__',digest).replace('__ART_FILES__',JSON.stringify(art));
 await writeFile('.dist/index.html',(await readFile('index.html','utf8')).replace('/assets/app.js',`/assets/app-${digest}.js`).replace('/assets/styles.css',`/assets/styles-${digest}.css`),'utf8');
