@@ -24,6 +24,8 @@ export async function decodePair(text,kind) {
 }
 export async function drawQR(canvas,text) {
   await QRCode.toCanvas(canvas,text,{width:560,margin:3,errorCorrectionLevel:'L',color:{dark:'#122029',light:'#ffffff'}});
+  canvas.style.removeProperty('width');
+  canvas.style.removeProperty('height');
 }
 export async function startScanner(video,onText,onError) {
   if(!navigator.mediaDevices?.getUserMedia)throw new Error('当前浏览器不能使用相机，请改用连接文本。');

@@ -5,6 +5,30 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Store,hash} from '../server/store.mjs';
 import {buildApp} from '../server/app.mjs';
+import {coverArt,musicPaths,portraitPaths} from '../shared/media.mjs';
+
+test('立绘与音乐在静态白名单内，移动播放器可读取音轨区间',async()=>{
+  const app=buildApp({rateLimit:false});
+  await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));
+  const base=`http://127.0.0.1:${app.server.address().port}`;
+  try{
+    for(const path of [coverArt,...portraitPaths]){
+      const response=await fetch(base+path);
+      const bytes=Buffer.from(await response.arrayBuffer());
+      assert.equal(response.status,200);
+      assert.equal(response.headers.get('content-type'),'image/webp');
+      assert.equal(bytes.subarray(8,12).toString(),'WEBP');
+    }
+    for(const path of musicPaths){
+      const response=await fetch(base+path,{headers:{Range:'bytes=0-31'}});
+      assert.equal(response.status,206);
+      assert.equal(response.headers.get('content-type'),'audio/mpeg');
+      assert.match(response.headers.get('content-range'),/^bytes 0-31\/\d+$/);
+      assert.equal((await response.arrayBuffer()).byteLength,32);
+    }
+    assert.equal((await fetch(base+'/audio/unknown.mp3')).status,404);
+  }finally{await app.close();}
+});
 
 test('会话仅保存哈希，房间和操作回执在重启后恢复',()=>{const dir=mkdtempSync(join(tmpdir(),'avalon-test-')),path=join(dir,'isolated.sqlite');let s=new Store(path);try{const {person,secret}=s.createSession();assert.equal(s.session(secret).id,person.id);assert(!s.session('forged'));const room=s.create(person,{}),command={id:crypto.randomUUID(),version:room.version,type:'ready',payload:{ready:true}};let result=s.command(room.code,person,command);assert.equal(result.room.version,1);s.close();s=new Store(path);result=s.command(room.code,person,command);assert(result.replayed);assert.equal(result.room.version,1);assert.equal(s.session(secret).id,person.id);assert(!readFileSync(path).includes(Buffer.from(secret)));assert.equal(s.db.prepare('SELECT secret_hash FROM sessions').get().secret_hash,hash(secret));assert.throws(()=>s.command(room.code,person,{...command,payload:{ready:false}}),e=>e.code==='COMMAND_REUSED');assert.throws(()=>s.command(room.code,person,{id:crypto.randomUUID(),version:0,type:'ready',payload:{ready:false}}),e=>e.code==='STALE_VERSION');}finally{s.close();rmSync(dir,{recursive:true,force:true});}});
 test('事务失败不留下候选房间或回执',()=>{const s=new Store();try{const {person}=s.createSession(),r=s.create(person,{});s.db.exec("CREATE TRIGGER stop_receipt BEFORE INSERT ON receipts BEGIN SELECT RAISE(ABORT, 'test failure'); END");assert.throws(()=>s.command(r.code,person,{id:crypto.randomUUID(),version:0,type:'ready',payload:{ready:true}}));assert.equal(s.get(r.code).version,0);assert(!s.get(r.code).players[0].ready);assert.equal(s.db.prepare('SELECT count(*) n FROM receipts').get().n,0);}finally{s.close();}});

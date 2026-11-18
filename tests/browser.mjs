@@ -24,12 +24,32 @@ async function pair(host,guest){
   const offer=await host.locator('#offer-text').inputValue();
   const pixels=await qr(host,'pair-qr');assert.equal(jsQR(new Uint8ClampedArray(pixels.data),pixels.width,pixels.height)?.data,offer,'真实邀请二维码可被扫描器解码');
   await click(guest,'join-offline');await guest.locator('#paste-code').fill(offer);await click(guest,'use-pasted');await guest.locator('#answer-result').waitFor({state:'attached'});
-  const answer=await guest.locator('#answer-result').inputValue();await host.locator('#answer-text').fill(answer);await click(host,'accept-answer');await guest.locator('.room-code').waitFor();await guest.locator('#modal').waitFor({state:'hidden'});
+  assert(await guest.locator('#answer-qr').evaluate(canvas=>{
+    const qr=canvas.getBoundingClientRect(),modal=canvas.closest('dialog').getBoundingClientRect();
+    return qr.width>0&&qr.left>=modal.left&&qr.right<=modal.right;
+  }),'回答二维码完整显示在弹窗内');
+  const answer=await guest.locator('#answer-result').inputValue();
+  await host.locator('#answer-text').fill(answer);await click(host,'accept-answer');
+  await guest.locator('.room-code').waitFor({timeout:45000});await guest.locator('#modal').waitFor({state:'hidden'});
 }
 try{
   console.log('在线：5 个独立访客浏览器，完整三次任务及刺杀流程');
   const pages=[];for(let i=0;i<5;i++)pages.push(await player(i===4?'长昵称'.repeat(10):'在线玩家'+(i+1),i===4));
   assert.match(await pages[0].locator('link[rel="stylesheet"]').getAttribute('href'),/^\/assets\/styles-[a-f0-9]{16}\.css$/,'升级不复用旧 SW 的固定样式 URL');
+  await pages[0].screenshot({path:'test-results/desktop-home.png',fullPage:true});
+  await pages[4].screenshot({path:'test-results/mobile-home.png',fullPage:true});
+  await click(pages[0],'home-handbook');
+  await pages[0].getByRole('tab',{name:'角色图鉴'}).waitFor();
+  assert.equal(await pages[0].locator('.handbook-profile img').first().getAttribute('src'),'/art/merlin.webp');
+  await click(pages[0],'modal-close');
+  await click(pages[0],'audio-settings');
+  await pages[0].locator('#audio-track').selectOption('dusk');
+  await pages[0].locator('[data-audio=effects]').uncheck();
+  await click(pages[0],'modal-close');
+  await click(pages[0],'audio-settings');
+  assert.equal(await pages[0].locator('#audio-track').inputValue(),'dusk');
+  assert.equal(await pages[0].locator('[data-audio=effects]').isChecked(),false);
+  await click(pages[0],'modal-close');
   await click(pages[0],'create-online');const code=await pages[0].locator('.room-code').textContent();
   for(const p of pages.slice(1)){await p.locator('#join-code').fill(code);await click(p,'join-online');await p.locator('.room-code').waitFor();}
   for(const p of pages)await click(p,'ready');await click(pages[0],'start');
@@ -48,11 +68,21 @@ try{
     for(const id of team)await click(pages[ids.indexOf(id)],'quest-success');
     await click(pages[0],'continue');
   }
-  await phase(pages[0],'刺杀梅林');const v=await snapshot(pages[0]),assassin=pages[ids.indexOf(v.game.assassinId)],target=views.find(v=>v.game.myRole==='percival').me;
+  await phase(pages[0],'刺杀梅林');
+  const assassinSeat=views.find(v=>v.game.myRole==='assassin').me;
+  const assassin=pages[ids.indexOf(assassinSeat)],target=views.find(v=>v.game.myRole==='percival').me;
+  for(const current of await Promise.all(pages.map(snapshot)))assert.equal(current.game.assassinId,current.me===assassinSeat?assassinSeat:undefined);
   await assassin.locator(`[data-seat="${target}"]`).click();await click(assassin,'assassinate');await click(assassin,'confirm-action');await pages[0].getByText('好人守住了卡美洛',{exact:true}).waitFor();
   console.log('游戏档案：游客完整记录、详情、排行榜空态和常玩伙伴入口');
   await click(pages[0],'player-records');await pages[0].locator('.journal-numbers b').first().filter({hasText:'1'}).waitFor();await pages[0].locator('[data-journal-match]').first().click();await pages[0].locator('.journal-detail').getByText('本场详情',{exact:true}).waitFor();assert.equal(await pages[0].locator('[data-journal-consent]').count(),0);await pages[0].getByRole('button',{name:'排行榜',exact:true}).click();await pages[0].getByText('暂无满足条件且自愿公开的玩家。普通游玩不要求参加榜单。',{exact:true}).waitFor();await pages[0].getByRole('button',{name:'常玩伙伴',exact:true}).click();await pages[0].getByText('与已登录玩家完成对局后，这里会显示共同场次。',{exact:true}).waitFor();await click(pages[0],'modal-close');
   await click(pages[0],'rematch');await pages[4].reload();await pages[4].locator('.room-code').waitFor();assert.equal((await snapshot(pages[4])).me,ids[4]);assert.equal((await snapshot(pages[4])).players.length,5);
+  await pages[4].context().setOffline(true);
+  await pages[4].locator('#network-state[data-state="reconnecting"]').waitFor();
+  await click(pages[0],'ready');
+  await pages[4].context().setOffline(false);
+  await pages[4].locator('#network-state[data-state="live"]').waitFor();
+  assert.equal((await snapshot(pages[4])).me,ids[4]);
+  await pages[4].locator('.roster-item').first().getByText('已准备',{exact:true}).waitFor();
   console.log('离线：5 个独立浏览器实际 WebRTC 连接、二维码解码、刷新恢复座位');
   const off=[];for(let i=0;i<5;i++)off.push(await player('同桌玩家'+(i+1),i===4));
   await click(off[0],'create-offline');await off[0].locator('.room-code').waitFor();
@@ -74,6 +104,12 @@ try{
   console.log('离线缓存：准备卡面后，网络关闭仍可重新打开并创建本机牌桌');
   const cached=await player('缓存玩家');await click(cached,'prepare-offline');await cached.getByText('离线素材已准备好。断网后可再次打开本站或主屏幕入口。',{exact:true}).waitFor();
   await cached.context().setOffline(true);await cached.reload();await cached.locator('#create-offline').waitFor();await click(cached,'create-offline');await cached.locator('.room-code').waitFor();
+  const cachedMedia=await cached.evaluate(async()=>{
+    const art=await fetch('/art/merlin.webp');
+    const music=await fetch('/audio/hall.mp3',{headers:{Range:'bytes=0-31'}});
+    return [art.status,music.status,(await music.arrayBuffer()).byteLength];
+  });
+  assert.deepEqual(cachedMedia,[200,206,32]);
   assert.deepEqual(errors,[]);console.log('PASS：完整在线局 / 离线局 / 重连 / QR 解码 / 离线缓存 / 移动布局，无浏览器脚本错误');
 }catch(error){console.error(error);for(let i=0;i<contexts.length;i++)for(const p of contexts[i].pages())await p.screenshot({path:`test-results/failure-${i}.png`,fullPage:true}).catch(()=>{});process.exitCode=1;
 }finally{await browser.close();await app.close();}

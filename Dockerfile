@@ -18,6 +18,8 @@ COPY index.html manifest.json ./
 COPY cards ./cards
 COPY icons ./icons
 COPY avatars ./avatars
+COPY art ./art
+COPY audio ./audio
 RUN mkdir -p /app/data && chown node:node /app/data
 USER node
 EXPOSE 3000

@@ -10,6 +10,7 @@ import {createHmac,timingSafeEqual} from 'node:crypto';
 import {hash} from './store.mjs';
 import {playerView,GameError,ROLES,AVATARS} from '../shared/engine.mjs';
 import {accountAvatar,playerName,avatarAssetPaths} from '../shared/fribench-game-kit/avatars.mjs';
+import {coverArt,musicPaths,portraitPaths} from '../shared/media.mjs';
 
 const ROOT=fileURLToPath(new URL('../',import.meta.url));
 const JSON_LIMIT=8192;
@@ -93,6 +94,8 @@ export function buildApp({repository,dbPath=':memory:',publicOrigin='http://loca
           if(account)store.journal.profile(account.sub,playerName(account.name),accountAvatar(account.picture));respond(res,200,{person:{id:person.id,name:person.name,avatar:person.avatar},room:current?view(current,person.id):null});return;
         }
         person=identify(req,res);
+        const expectedSeat=req.headers['x-avalon-seat'];
+        if(expectedSeat!==undefined&&expectedSeat!==person.id)throw new GameError('SEAT_CHANGED','在线身份已变化，请重新同步座位。');
         if(path==='/api/account'&&req.method==='GET'){const account=accounts.get(req);respond(res,200,{signedIn:Boolean(account),profile:account?{name:playerName(account.name),avatar:accountAvatar(account.picture)}:null,guestClaimAvailable:account?!store.claimRecord?.(account.sub):false});return;}
         if(path.startsWith('/api/player')){
           const account=accounts.get(req),owner={accountId:account?.sub,seatId:person.id};
@@ -165,16 +168,35 @@ export function buildApp({repository,dbPath=':memory:',publicOrigin='http://loca
       else if(/^\/assets\/styles-[a-f0-9]{16}\.css$/.test(path)){file='.dist/styles.css';mime='text/css; charset=utf-8';}
       else if(fixed[path]) [file,mime]=fixed[path];
       else if(avatarAssetPaths.includes(path)){file=path.slice(1);mime='image/webp';}
+      else if(path===coverArt||portraitPaths.includes(path)){file=path.slice(1);mime='image/webp';}
+      else if(musicPaths.includes(path)){file=path.slice(1);mime='audio/mpeg';}
       else if(/^\/cards\/[a-z0-9_-]+\.png$/.test(path)&&Object.values(ROLES).some(r=>path===`/cards/${r.image}`)||['/cards/quest_success.png','/cards/quest_fail.png','/icons/app-icon.png','/icons/lady_token.png'].includes(path)){file=path.slice(1);mime='image/png';}
       else {json(res,404,{message:'页面不存在。'});return;}
       const full=resolve(root,file);if(!full.startsWith(resolve(root)))throw new Error('Invalid static path');
       const stat=statSync(full);if(!stat.isFile())throw new Error('Invalid static file');
       res.setHeader('Content-Type',mime);res.setHeader('Cache-Control',path==='/sw.js'||mime.startsWith('text/html')?'no-cache':mime==='image/png'?'public, max-age=604800':'no-cache');
-      res.setHeader('Content-Length',stat.size);if(req.method==='HEAD')res.end();else createReadStream(full).on('error',()=>res.destroy()).pipe(res);
+      let range;
+      if(mime==='audio/mpeg'){
+        res.setHeader('Accept-Ranges','bytes');
+        const match=/^bytes=(\d*)-(\d*)$/.exec(req.headers.range||'');
+        if(match){
+          const [,first,last]=match;
+          const start=first?Number(first):Math.max(0,stat.size-Number(last));
+          const end=first&&last?Math.min(stat.size-1,Number(last)):stat.size-1;
+          if(start>end){
+            res.writeHead(416,{'Content-Range':`bytes */${stat.size}`});res.end();return;
+          }
+          range={start,end};
+          res.statusCode=206;
+          res.setHeader('Content-Range',`bytes ${start}-${end}/${stat.size}`);
+        }
+      }
+      res.setHeader('Content-Length',range?range.end-range.start+1:stat.size);
+      if(req.method==='HEAD')res.end();else createReadStream(full,range).on('error',()=>res.destroy()).pipe(res);
     }catch(e){
       if(res.headersSent){res.end();return;}
       const known=e instanceof GameError;
-      const status=!known?500:e.code==='RATE_LIMIT'?429:['BAD_ORIGIN','NOT_MEMBER','HOST_ONLY'].includes(e.code)?403:e.code==='UNAUTHENTICATED'?401:['ROOM_NOT_FOUND','NOT_FOUND'].includes(e.code)?404:409;
+      const status=!known?500:e.code==='RATE_LIMIT'?429:['BAD_ORIGIN','NOT_MEMBER','HOST_ONLY'].includes(e.code)?403:['UNAUTHENTICATED','SEAT_CHANGED'].includes(e.code)?401:['ROOM_NOT_FOUND','NOT_FOUND'].includes(e.code)?404:409;
       let current=null;if(known&&code&&person){try{current=view(store.get(code),person.id);}catch{}}
       if(!known)console.error(JSON.stringify({event:'request-error',kind:e.name||'Error'}));
       respond(res,status,{code:known?e.code:'INTERNAL_ERROR',message:known?e.message:'服务暂时不可用，请稍后重试。',view:current});
@@ -185,7 +207,7 @@ export function buildApp({repository,dbPath=':memory:',publicOrigin='http://loca
     return handle(req,res);
   })();void pending.catch(()=>{if(!res.headersSent)sendJSON(res,503,{code:'PERSISTENCE_UNAVAILABLE',message:'服务暂时无法保存，请稍后重试。'});else res.end();});});
   server.requestTimeout=15000;server.headersTimeout=10000;
-  const heartbeat=setInterval(()=>{for(const s of streams.values())void resolveAccount(s.req.headers.cookie).then(account=>{const owner=store.personAccount?.(s.person.id);if(owner&&owner!==account?.sub)s.res.end();else s.res.write(': ping\n\n');}).catch(()=>s.res.end());},15000);heartbeat.unref();
+  const heartbeat=setInterval(()=>{for(const s of streams.values())void resolveAccount(s.req.headers.cookie).then(account=>{const owner=store.personAccount?.(s.person.id);if(owner&&owner!==account?.sub)s.res.end();else s.res.write('event: heartbeat\ndata: {}\n\n');}).catch(()=>s.res.end());},15000);heartbeat.unref();
   const maintenance=setInterval(()=>{void actor.run(()=>{store.cleanup();for(const [k,v]of limits)if(now()-v.start>120000)limits.delete(k);for(const s of streams.values()){try{store.get(s.code);}catch{actor.publish(()=>{s.res.write('event: expired\ndata: {}\n\n');s.res.end();});}}}).catch(()=>{});},60000);maintenance.unref();
   const app={server,store,publicOrigin,online,async close(){clearInterval(heartbeat);clearInterval(maintenance);for(const s of streams.values())s.res.end();streams.clear();await new Promise(resolve=>server.close(resolve));await actor.run(()=>{}).catch(()=>{});await store.close();}};
   return app;

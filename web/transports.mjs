@@ -2,35 +2,326 @@ import {applyCommand,createRoom,joinRoom,playerView,GameError} from '../shared/e
 import {encodePair,decodePair} from './qr.mjs';
 
 export function actionKey(v) {const g=v?.game;return g?`${g.id}:${g.phase}:${g.questIndex}:${g.leaderId}:${g.proposals.length}`:`${v?.id}:lobby`;}
+
+const RECONNECT_MIN=600,RECONNECT_MAX=12000,CONNECT_TIMEOUT=12000,HEARTBEAT_TIMEOUT=35000;
+const uncertainReply=error=>['NETWORK','INTERNAL_ERROR','PERSISTENCE_UNAVAILABLE'].includes(error.code);
+const lostSeat=error=>['SEAT_CHANGED','UNAUTHENTICATED'].includes(error.code);
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+
 export class Online {
-  constructor(onView,onStatus){this.onView=onView;this.onStatus=onStatus;this.kind='online';this.view=null;this.events=null;this.generation=0;}
-  async request(path,data) {
+  constructor(onView,onStatus,{onIdentityChange,onCommandError}={}) {
+    this.onView=onView;
+    this.onStatus=onStatus;
+    this.onIdentityChange=onIdentityChange;
+    this.onCommandError=onCommandError;
+    this.kind='online';
+    this.view=null;
+    this.generation=0;
+    this.requests=new AbortController();
+    this.connectionState='idle';
+  }
+
+  setStatus(text,state) {
+    if(this.connectionState===state&&this.connectionText===text)return;
+    this.connectionState=state;
+    this.connectionText=text;
+    this.onStatus(text,state);
+  }
+
+  assertGeneration(generation) {
+    if(generation!==this.generation)throw new GameError('ACCOUNT_CHANGED','在线身份已变化，旧请求结果已丢弃。');
+  }
+
+  async request(path,data,{signal,timeout=12000}={}) {
     const generation=this.generation;
-    let response;
-    try{response=await fetch(path,{method:data===undefined?'GET':'POST',headers:data===undefined?{}:{'Content-Type':'application/json'},body:data===undefined?undefined:JSON.stringify(data),credentials:'same-origin',signal:AbortSignal.timeout(12000)});}catch{throw new GameError('NETWORK','连接中断，请等待重连后重试。');}
-    let result;try{result=await response.json();}catch{throw new GameError('NETWORK','服务暂时没有响应，请稍后重试。');}
-    if(generation!==this.generation)throw new GameError('ACCOUNT_CHANGED','账号已变化，旧请求结果已丢弃。');
-    if(!response.ok){const error=new GameError(result.code||'NETWORK',result.message||'操作失败，请重试。');error.view=result.view;throw error;}return result;
+    const headers=data===undefined?{}:{'Content-Type':'application/json'};
+    if(path!=='/api/session'&&this.person?.id)headers['X-Avalon-Seat']=this.person.id;
+    const lifecycle=this.requests.signal,controller=new AbortController(),cancel=()=>controller.abort();
+    const deadline=setTimeout(cancel,timeout);
+    lifecycle.addEventListener('abort',cancel);
+    signal?.addEventListener('abort',cancel);
+    if(signal?.aborted)cancel();
+    let response,result;
+    try{
+      response=await fetch(path,{method:data===undefined?'GET':'POST',headers,body:data===undefined?undefined:JSON.stringify(data),cache:'no-store',credentials:'same-origin',signal:controller.signal});
+      result=await response.json();
+    }catch{
+      this.assertGeneration(generation);
+      throw new GameError('NETWORK','连接中断，正在确认线上状态。');
+    }finally{
+      clearTimeout(deadline);
+      lifecycle.removeEventListener('abort',cancel);
+      signal?.removeEventListener('abort',cancel);
+    }
+    this.assertGeneration(generation);
+    if(!response.ok){
+      const error=new GameError(result?.code||'NETWORK',result?.message||'操作失败，请重试。');
+      error.view=result?.view;
+      if(error.code==='SEAT_CHANGED')this.identityChanged();
+      throw error;
+    }
+    return result;
   }
-  accept(v){if(!v)return;if(this.view?.id===v.id&&v.version<this.view.version)return;this.view=v;this.onView(v);}
-  async boot(){let r;for(let attempt=0;attempt<3;attempt++){try{r=await this.request('/api/session');break;}catch(e){if(attempt===2||e.code!=='NETWORK')throw e;await new Promise(resolve=>setTimeout(resolve,800));}}this.person=r.person;if(r.room){this.accept(r.room);this.connect(r.room.code);}return r;}
-  async profile(person){const r=await this.request('/api/profile',person);this.person=r.person;return r.person;}
-  async create(settings){let r;try{r=await this.request('/api/rooms',{settings});}catch(e){const b=await this.request('/api/session').catch(()=>null);if(b?.room){this.accept(b.room);this.connect(b.room.code);return b.room;}throw e;}this.accept(r.view);this.connect(r.view.code);return r.view;}
-  async join(code){const r=await this.request(`/api/rooms/${code}/join`,{});this.accept(r.view);this.connect(code);return r.view;}
-  connect(code){this.events?.close();this.code=code;this.onStatus('连接中');const events=new EventSource(`/api/rooms/${code}/events`);this.events=events;
-    events.onopen=()=>this.onStatus('在线');events.onerror=()=>this.onStatus('正在重连');
-    events.addEventListener('snapshot',e=>this.accept(JSON.parse(e.data)));
-    for(const event of ['removed','expired'])events.addEventListener(event,()=>{events.close();this.view=null;this.onView(null);this.onStatus(event==='expired'?'房间已过期':'你已离开房间');});
+
+  identityChanged() {
+    this.close({clearIdentity:true});
+    this.onView(null);
+    this.setStatus('在线身份已变化','terminal');
+    this.onIdentityChange?.();
   }
+
+  accept(view) {
+    if(!view)return;
+    if(this.person?.id&&view.me!==this.person.id){
+      this.identityChanged();
+      throw new GameError('SEAT_CHANGED','在线身份已变化，请重新同步座位。');
+    }
+    if(this.view?.id===view.id){
+      if(view.version<this.view.version)return;
+      if(view.version===this.view.version&&view.players.every((p,i)=>p.online===this.view.players[i]?.online))return;
+    }
+    this.view=view;
+    this.onView(view);
+    if(view.closed){
+      this.stopFeed();
+      this.setStatus('房间已关闭','terminal');
+    }
+  }
+
+  async boot() {
+    const generation=this.generation;
+    let result;
+    for(let attempt=0;attempt<3;attempt++){
+      try{result=await this.request('/api/session');break;}
+      catch(error){
+        if(attempt===2||!uncertainReply(error))throw error;
+        await wait(800);
+        this.assertGeneration(generation);
+      }
+    }
+    this.assertGeneration(generation);
+    this.person=result.person;
+    if(result.room)this.enter(result.room);
+    else this.setStatus('在线服务就绪','idle');
+    return result;
+  }
+
+  async profile(person) {
+    const {person:saved}=await this.request('/api/profile',person);
+    this.person=saved;
+    return saved;
+  }
+
+  enter(view) {
+    this.accept(view);
+    if(!view.closed)this.connect(view.code);
+    return view;
+  }
+
+  async enterOnline(path,data,code) {
+    const generation=this.generation;
+    try{
+      const {view}=await this.request(path,data);
+      return this.enter(view);
+    }catch(error){
+      if(!uncertainReply(error)&&error.code!=='ALREADY_IN_ROOM')throw error;
+      const session=await this.request('/api/session').catch(()=>null);
+      this.assertGeneration(generation);
+      if(session&&this.person?.id&&session.person.id!==this.person.id)this.identityChanged();
+      else if(session?.room&&(!code||code===session.room.code)){
+        this.person=session.person;
+        return this.enter(session.room);
+      }
+      throw error;
+    }
+  }
+
+  create(settings){return this.enterOnline('/api/rooms',{settings});}
+  join(code){return this.enterOnline(`/api/rooms/${code}/join`,{},code);}
+
+  connect(code) {
+    this.stopFeed();
+    const feed={code,aborter:new AbortController(),backoff:RECONNECT_MIN,lastSeen:0};
+    this.feed=feed;
+    feed.resume=()=>this.resume();
+    feed.offline=()=>this.scheduleRecovery(feed);
+    feed.visibility=()=>{if(!globalThis.document.hidden)this.resume();};
+    globalThis.addEventListener?.('online',feed.resume);
+    globalThis.addEventListener?.('offline',feed.offline);
+    globalThis.document?.addEventListener('visibilitychange',feed.visibility);
+    this.setStatus('连接中','connecting');
+    this.openEvents(feed);
+  }
+
+  openEvents(feed) {
+    try{feed.events=new EventSource(`/api/rooms/${feed.code}/events`);}
+    catch{this.scheduleRecovery(feed);return;}
+    const events=feed.events;
+    const current=()=>this.feed===feed&&feed.events===events;
+    const observe=()=>{
+      feed.lastSeen=Date.now();
+      clearTimeout(feed.watchdog);
+      feed.watchdog=setTimeout(()=>this.scheduleRecovery(feed),HEARTBEAT_TIMEOUT);
+    };
+    feed.watchdog=setTimeout(()=>this.scheduleRecovery(feed),CONNECT_TIMEOUT);
+    events.onerror=()=>{if(current())this.scheduleRecovery(feed);};
+    events.addEventListener('snapshot',event=>{
+      if(!current())return;
+      try{
+        const view=JSON.parse(event.data);
+        if(view?.code!==feed.code||typeof view.me!=='string'||!Number.isSafeInteger(view.version))return;
+        this.accept(view);
+        if(!current())return;
+        feed.backoff=RECONNECT_MIN;
+        observe();
+        this.setStatus('在线','live');
+      }catch(error){if(!lostSeat(error))this.scheduleRecovery(feed);}
+    });
+    events.addEventListener('heartbeat',()=>{if(current()&&this.connectionState==='live')observe();});
+    events.addEventListener('removed',()=>{if(current())this.finishFeed('你已离开房间');});
+    events.addEventListener('expired',()=>{if(current())this.finishFeed('房间已过期');});
+  }
+
+  stopEvents(feed) {
+    clearTimeout(feed.watchdog);
+    const events=feed.events;
+    feed.events=null;
+    events?.close();
+  }
+
+  stopFeed() {
+    const feed=this.feed;
+    if(!feed)return;
+    this.feed=null;
+    this.uncertain=null;
+    this.stopEvents(feed);
+    clearTimeout(feed.retry);
+    feed.aborter.abort();
+    globalThis.removeEventListener?.('online',feed.resume);
+    globalThis.removeEventListener?.('offline',feed.offline);
+    globalThis.document?.removeEventListener('visibilitychange',feed.visibility);
+  }
+
+  finishFeed(message) {
+    this.stopFeed();
+    this.view=null;
+    this.uncertain=null;
+    this.onView(null);
+    this.setStatus(message,'terminal');
+  }
+
+  resume() {
+    const feed=this.feed;
+    if(!feed||this.connectionState==='live'&&Date.now()-feed.lastSeen<HEARTBEAT_TIMEOUT)return false;
+    if(feed.syncing)return true;
+    clearTimeout(feed.retry);
+    feed.retry=undefined;
+    this.scheduleRecovery(feed,true);
+    return true;
+  }
+
+  scheduleRecovery(feed,immediate=false) {
+    if(this.feed!==feed||feed.retry!==undefined)return;
+    this.stopEvents(feed);
+    if(this.connectionState!=='degraded')this.setStatus('正在重连','reconnecting');
+    feed.retry=setTimeout(()=>{
+      feed.retry=undefined;
+      void this.recover(feed);
+    },immediate?0:feed.backoff);
+    feed.backoff=Math.min(RECONNECT_MAX,feed.backoff*2);
+  }
+
+  async recover(feed) {
+    if(this.feed!==feed||feed.syncing)return;
+    feed.syncing=true;
+    try{
+      const {view}=await this.request(`/api/rooms/${feed.code}`,undefined,{signal:feed.aborter.signal,timeout:8000});
+      if(this.feed!==feed)return;
+      this.accept(view);
+      if(this.feed!==feed)return;
+      if(this.uncertain)await this.confirmPending(feed);
+      if(this.feed!==feed)return;
+      this.setStatus('牌桌已同步，正在恢复实时连接','degraded');
+      this.openEvents(feed);
+    }catch(error){
+      if(this.feed!==feed)return;
+      if(lostSeat(error)){this.identityChanged();return;}
+      if(error.code==='ROOM_NOT_FOUND'){this.finishFeed('房间已过期');return;}
+      if(error.code==='NOT_MEMBER'){this.finishFeed('你已离开房间');return;}
+      this.setStatus('连接中断，正在重试','reconnecting');
+      this.scheduleRecovery(feed);
+    }finally{feed.syncing=false;}
+  }
+
+  async submitCommand(feed,command) {
+    const result=await this.request(`/api/rooms/${feed.code}/commands`,command,{timeout:7000});
+    if(this.feed===feed){
+      if(result.view)this.accept(result.view);
+      if(result.left)this.finishFeed('你已离开房间');
+    }
+    return result.view;
+  }
+
+  async confirmPending(feed) {
+    try{await this.submitCommand(feed,this.uncertain);}
+    catch(error){
+      if(this.feed!==feed)return;
+      if(uncertainReply(error)||lostSeat(error)||['RATE_LIMIT','ROOM_NOT_FOUND','NOT_MEMBER'].includes(error.code))throw error;
+      if(error.view)this.accept(error.view);
+      this.onCommandError?.(error.code==='STALE_VERSION'?'牌桌进度已变化，这次操作未提交。':error.message);
+    }
+    if(this.feed===feed)this.uncertain=null;
+  }
+
   async command(type,payload={}) {
-    const key=actionKey(this.view),code=this.view.code;let command={id:crypto.randomUUID(),version:this.view.version,type,payload};
-    for(let i=0;i<5;i++) {
-      try{const r=await this.request(`/api/rooms/${code}/commands`,command);if(r.view)this.accept(r.view);if(r.left){this.close();this.view=null;this.onView(null);}return r.view;}
-      catch(e){if(e.view)this.accept(e.view);if(e.code==='STALE_VERSION'&&actionKey(this.view)===key){command={...command,version:this.view.version};continue;}if(e.code==='NETWORK'&&i<1)continue;throw e;}
+    if(!this.feed||!this.view||this.view.closed)throw new GameError('NOT_MEMBER','请先恢复你的座位。');
+    if(this.uncertain)throw new GameError('COMMAND_PENDING','正在确认上一项操作，请稍候。');
+    const generation=this.generation,key=actionKey(this.view),feed=this.feed;
+    const command={id:crypto.randomUUID(),version:this.view.version,type,payload};
+    let retriedNetwork=false,awaitingReceipt=false;
+    for(let i=0;i<5;i++){
+      try{return await this.submitCommand(feed,command);}
+      catch(error){
+        this.assertGeneration(generation);
+        if(this.feed!==feed)return this.view;
+        if(lostSeat(error)){this.identityChanged();throw error;}
+        if(error.view)this.accept(error.view);
+        if(error.code==='STALE_VERSION'&&actionKey(this.view)===key){
+          awaitingReceipt=false;
+          command.version=this.view.version;
+          continue;
+        }
+        if(uncertainReply(error)){
+          awaitingReceipt=true;
+          if(!retriedNetwork&&i<4){
+            retriedNetwork=true;
+            await wait(450);
+            this.assertGeneration(generation);
+            if(this.feed!==feed)return this.view;
+            continue;
+          }
+        }
+        if(uncertainReply(error)||awaitingReceipt&&error.code==='RATE_LIMIT'){
+          this.uncertain=command;
+          this.scheduleRecovery(feed);
+          throw new GameError('COMMAND_PENDING','正在重连并确认本次操作。');
+        }
+        throw error;
+      }
     }
     throw new GameError('STALE_VERSION','大家正在同时操作，请稍后再试。');
   }
-  close(){this.generation++;this.events?.close();this.events=null;this.view=null;}
+
+  close({clearIdentity=false}={}) {
+    this.generation++;
+    this.requests.abort();
+    this.requests=new AbortController();
+    this.stopFeed();
+    this.view=null;
+    this.uncertain=null;
+    this.connectionState='idle';
+    if(clearIdentity)this.person=null;
+  }
 }
 
 const HOST_KEY='fribench.avalon.offline.host.v1',SEATS_KEY='fribench.avalon.offline.seats.v1';
@@ -44,7 +335,7 @@ export class OfflineHost {
     this.kind='offline-host';this.onView=onView;this.onStatus=onStatus;this.peers=new Map();this.pairs=new Map();this.receipts=new Map(saved?.receipts||[]);
     this.person=saved?.person||person;this.proofs=saved?.proofs||{};
     this.room=saved?.room||createRoom(this.person,{}, {code:crypto.randomUUID().replaceAll('-','').slice(0,10).toUpperCase()});
-    this.persist(this.room);this.publish();this.onStatus('离线主持中');
+    this.persist(this.room);this.publish();this.onStatus('离线主持中','local');
   }
   static saved(){try{const data=JSON.parse(localStorage.getItem(HOST_KEY));return data?.room&&!data.room.closed&&Date.now()-data.room.updatedAt<6*3600000?data:null;}catch{return null;}}
   static clear(){localStorage.removeItem(HOST_KEY);}
@@ -108,23 +399,36 @@ export class OfflineGuest {
   async offer(text){
     const data=await decodePair(text,'offer');this.roomId=data.roomId;this.pc=rtc();
     this.pc.ondatachannel=e=>this.bind(e.channel);
-    this.pc.onconnectionstatechange=()=>{if(['failed','disconnected','closed'].includes(this.pc.connectionState))this.onStatus('连接断开，请重新扫码');};
+    this.pc.onconnectionstatechange=()=>{
+      if(this.pc.connectionState==='disconnected')this.onStatus('正在恢复离线连接','reconnecting');
+      if(this.pc.connectionState==='connected'&&this.dc?.readyState==='open'&&this.view)this.onStatus('已连接离线房间','live');
+      if(['failed','closed'].includes(this.pc.connectionState))this.onStatus('连接断开，请重新扫码','terminal');
+    };
     await this.pc.setRemoteDescription({type:'offer',sdp:data.sdp});await this.pc.setLocalDescription(await this.pc.createAnswer());await gather(this.pc);
     return encodePair({kind:'answer',pairId:data.pairId,roomId:data.roomId,expires:data.expires,sdp:this.pc.localDescription.sdp});
   }
-  bind(dc){this.dc=dc;dc.onopen=()=>{this.onStatus('正在加入离线房间');let proof;try{proof=JSON.parse(localStorage.getItem(SEATS_KEY)||'{}')[this.roomId];}catch{}send(dc,{kind:'hello',name:this.person.name,avatar:this.person.avatar,proof});};
+  bind(dc){this.dc=dc;dc.onopen=()=>{this.onStatus('正在加入离线房间','connecting');let proof;try{proof=JSON.parse(localStorage.getItem(SEATS_KEY)||'{}')[this.roomId];}catch{}send(dc,{kind:'hello',name:this.person.name,avatar:this.person.avatar,proof});};
     dc.onmessage=e=>{try{const msg=readJSON(e.data);
-      if(msg.kind==='welcome'){this.person=msg.person;const seats=JSON.parse(localStorage.getItem(SEATS_KEY)||'{}');seats[msg.roomId]=msg.proof;localStorage.setItem(SEATS_KEY,JSON.stringify(seats));this.onStatus('已连接离线房间');}
+      if(msg.kind==='welcome'){this.person=msg.person;const seats=JSON.parse(localStorage.getItem(SEATS_KEY)||'{}');seats[msg.roomId]=msg.proof;localStorage.setItem(SEATS_KEY,JSON.stringify(seats));this.onStatus('已连接离线房间','live');}
       if(msg.kind==='snapshot')this.accept(msg.view);
-      if(msg.kind==='removed'){for(const [id,task]of this.pending)if(task.type==='leave'){clearTimeout(task.timer);this.pending.delete(id);task.resolve(null);}this.onView(null);this.close();return;}
+      if(msg.kind==='removed'){for(const [id,task]of this.pending)if(task.type==='leave'){clearTimeout(task.timer);this.pending.delete(id);task.resolve(null);}this.onView(null);this.onStatus('已离开离线房间','terminal');this.close();return;}
       if(msg.kind==='ack'||msg.kind==='error'){if(msg.view)this.accept(msg.view);const task=this.pending.get(msg.id);if(task){clearTimeout(task.timer);this.pending.delete(msg.id);msg.kind==='ack'?task.resolve(msg.view):task.reject(Object.assign(new Error(msg.message),{code:msg.code}));}else if(msg.kind==='error')this.onStatus(msg.message);}
     }catch{this.onStatus('连接数据无法读取，请重新扫码。');}};
-    dc.onclose=()=>this.onStatus('离线连接已断开，请重新扫码');
+    dc.onclose=()=>this.onStatus('离线连接已断开，请重新扫码','terminal');
   }
   async command(type,payload={}){
     const key=actionKey(this.view);const command={id:crypto.randomUUID(),version:this.view.version,type,payload};
     for(let i=0;i<5;i++){try{return await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{this.pending.delete(command.id);reject(Object.assign(new Error('房主暂时没有回应，请重连后重试。'),{code:'NETWORK'}));},10000);this.pending.set(command.id,{resolve,reject,timer,type});try{send(this.dc,{kind:'command',command});}catch(e){clearTimeout(timer);this.pending.delete(command.id);reject(e);}});}catch(e){if(e.code==='STALE_VERSION'&&actionKey(this.view)===key){command.version=this.view.version;continue;}throw e;}}
     throw new Error('牌桌正在更新，请稍后重试。');
   }
-  close(){this.pc?.close();for(const task of this.pending.values()){clearTimeout(task.timer);task.reject(new Error('连接已经关闭。'));}this.pending.clear();}
+  close(){
+    if(this.pc){
+      this.pc.onconnectionstatechange=null;
+      this.pc.ondatachannel=null;
+      if(this.dc)this.dc.onopen=this.dc.onclose=this.dc.onmessage=null;
+      this.pc.close();
+    }
+    for(const task of this.pending.values()){clearTimeout(task.timer);task.reject(new Error('连接已经关闭。'));}
+    this.pending.clear();
+  }
 }

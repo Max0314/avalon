@@ -6,7 +6,7 @@ import {joinRoom,applyCommand} from '../shared/engine.mjs';
 const app=buildApp({rateLimit:false});await new Promise(r=>app.server.listen(0,'127.0.0.1',r));const base=`http://127.0.0.1:${app.server.address().port}`;app.publicOrigin=base;
 const browser=await chromium.launch({headless:true});mkdirSync('test-results',{recursive:true});
 try{
-  const page=await browser.newPage();await page.goto(base);await page.locator('#create-online').waitFor();
+  const page=await browser.newPage();await page.goto(base);await page.locator('#network-state[data-state="live"]').waitFor();
   const person=await page.evaluate(async()=>(await(await fetch('/api/session')).json()).person);person.name='天地玄黄宇宙洪荒';
   let r=app.store.create(person,{});
   for(let i=1;i<10;i++)r=joinRoom(r,{id:crypto.randomUUID(),name:'天地玄黄宇宙洪'+i,avatar:'🦊'});

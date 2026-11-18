@@ -189,7 +189,7 @@ export function playerView(room,actorId,online=new Set()) {
     threshold:room.players.length>=7&&g.questIndex===3?2:1,rejections:g.rejections,confirmed:[...g.confirmed],results:structuredClone(g.results),proposals:structuredClone(g.proposals),
     voted:Object.keys(g.votes),questSubmitted:Object.keys(g.questCards),myVote:g.votes[actorId]??null,myQuest:g.questCards[actorId]??null,
     myRole:role,intel,privateIntel:structuredClone(g.privateIntel[actorId]||[]),ladyHolder:g.ladyHolder,ladyHolders:[...g.ladyHolders],ladyHistory:structuredClone(g.ladyHistory),winner:g.winner,reason:g.reason};
-  if(g.phase==='assassin')view.game.assassinId=room.players.find(p=>g.roles[p.id]==='assassin').id;
+  if(g.phase==='assassin'&&role==='assassin')view.game.assassinId=actorId;
   if(finished){view.game.roles={...g.roles};view.game.assassinated=g.assassinated||null;}
   return view;
 }

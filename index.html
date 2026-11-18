@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#111a25">
+  <meta name="theme-color" content="#14211d">
   <meta name="description" content="与朋友围坐圆桌：在线好友局、离线扫码组网，共同体验阿瓦隆。">
   <title>阿瓦隆 · Fribench 圆桌议会</title>
   <link rel="icon" href="/icons/app-icon.png">
@@ -13,11 +13,24 @@
   <script defer src="/_fribench/client.js"></script><script defer src="/_fribench/account-view.js"></script>
 </head>
 <body>
-  <header class="site-header"><a class="brand" href="/" id="brand-home"><span class="brand-mark" aria-hidden="true">✧</span><span>阿瓦隆<small>FRIBENCH · 圆桌议会</small></span></a><div class="header-actions"><span class="network-state" id="network-state" role="status">正在连接</span><button class="icon-button" id="guide" aria-label="打开中文玩法指南">?</button></div></header>
-  <main id="app" aria-live="polite"><section class="loading">正在准备圆桌…</section></main>
+  <header class="site-header">
+    <a class="brand" href="/" id="brand-home"><span class="brand-mark" aria-hidden="true"></span><span>阿瓦隆<small>圆桌议会</small></span></a>
+    <nav class="header-actions" aria-label="游戏导航">
+      <span class="network-state" id="network-state" role="status" data-state="connecting">正在连接</span>
+      <button id="retry-online" class="header-button" hidden>重连</button>
+      <button class="header-button" id="guide">手册</button>
+      <button class="header-button" id="audio-settings" aria-label="声音设置"><span aria-hidden="true">♫</span></button>
+      <button class="header-button" id="account-menu">账号</button>
+    </nav>
+  </header>
+  <main id="app"><section class="loading" role="status">正在准备圆桌…</section></main>
   <footer class="site-footer"><span>非官方好友自用实现 · 卡面保留原图</span><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">渝ICP备2026016967号-1</a><a href="https://www.beian.gov.cn/portal/registerSystemInfo?recordcode=50010502504754" target="_blank" rel="noopener noreferrer">渝公网安备50010502504754号</a></footer>
-  <dialog id="modal" aria-labelledby="modal-title"><div id="modal-body"></div><button id="modal-close" class="dialog-close" aria-label="关闭弹窗">×</button></dialog>
+  <dialog id="modal" aria-labelledby="modal-title">
+    <div id="modal-body"></div><button id="modal-close" class="dialog-close" aria-label="关闭弹窗">×</button>
+    <div id="modal-feedback" class="modal-feedback" role="status" hidden></div>
+  </dialog>
   <div id="toast" class="toast" role="status" hidden></div>
+  <div id="scene-notice" class="scene-notice" role="status" aria-live="polite" hidden></div>
   <noscript>请开启浏览器 JavaScript 后再进入牌桌。</noscript>
 </body>
 </html>
