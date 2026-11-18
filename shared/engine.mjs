@@ -1,5 +1,5 @@
 // Pure, shared rules. The online server / offline host owns the full state.
-import {PERSISTED_AVATAR_IDS} from './fribench-game-kit/avatars.mjs';
+import {AVATARS as SELECTABLE_AVATARS,PERSISTED_AVATAR_IDS,avatarId} from './fribench-game-kit/avatars.mjs';
 export class GameError extends Error {
   constructor(code, message) { super(message); this.code = code; }
 }
@@ -18,6 +18,7 @@ export const ROLES = {
 };
 export const DEFAULT_SETTINGS = {percival:true,morgana:true,mordred:false,oberon:false,lady:false};
 export const AVATARS = PERSISTED_AVATAR_IDS;
+export const BOT_NAMES = ['打盹骑士','火盆守夜人','迷路骑士','风笛学徒','喝茶侍卫','林间旅者','松果铁匠','披风裁缝','河畔渔夫'];
 export function randomInt(n) {
   const max = Math.floor(0x100000000 / n) * n;
   const value = new Uint32Array(1);
@@ -53,7 +54,7 @@ export function roleSet(n, options, rng = randomInt) {
 }
 export function createRoom(owner, options = {}, context = {}) {
   return {id:context.id||crypto.randomUUID(),code:context.code||'',version:0,createdAt:context.now||Date.now(),updatedAt:context.now||Date.now(),
-    hostId:owner.id,players:[{id:owner.id,name:nickname(owner.name),avatar:AVATARS.includes(owner.avatar)?owner.avatar:AVATARS[0],ready:false}],
+    hostId:owner.id,players:[{id:owner.id,name:nickname(owner.name),avatar:avatarId(owner.avatar),ready:false}],
     settings:settings(options),game:null,closed:false};
 }
 function member(room,id) {
@@ -74,9 +75,25 @@ const own=(obj,key)=>Object.prototype.hasOwnProperty.call(obj,key);
 function payloadKeys(payload,keys) {
   if (!payload || typeof payload!=='object' || Array.isArray(payload) || Object.keys(payload).some(k=>!keys.includes(k))) fail('BAD_COMMAND','操作参数不正确。');
 }
+export function roomAvatarTaken(room,seatId,avatar) {
+  return room.players.some(player=>player.id!==seatId&&avatarId(player.avatar)===avatar);
+}
+function freeAvatar(room,rng) {
+  const available=SELECTABLE_AVATARS.filter(option=>!roomAvatarTaken(room,null,option.id));
+  return available[rng(available.length)].id;
+}
+function readyOnlyBots(room) {
+  room.players.forEach(player=>player.ready=player.bot===true);
+}
+function botLobby(room,actorId,context) {
+  host(room,actorId);
+  if(!context.allowBots)fail('BOTS_UNAVAILABLE','只有在线房间可以补入机器人。');
+  if(room.game)fail('WRONG_PHASE','只有大厅可以调整机器人席位。');
+}
+
 export function applyCommand(original, actorId, type, payload = {}, context = {}) {
   const room=structuredClone(original), actor=member(room,actorId), g=room.game;
-  const permitted={ready:['ready'],settings:['settings'],start:[],confirmRole:[],nominate:['players'],vote:['approve'],quest:['success'],continue:[],inspect:['playerId'],assassinate:['playerId'],reset:[],leave:[],kick:['playerId'],transfer:['playerId'],profile:['name','avatar'],close:[]};
+  const permitted={ready:['ready'],settings:['settings'],reorder:['players'],addBot:[],fillBots:[],removeBot:['playerId'],start:[],confirmRole:[],nominate:['players'],vote:['approve'],quest:['success'],continue:[],inspect:['playerId'],assassinate:['playerId'],reset:[],leave:[],kick:['playerId'],transfer:['playerId'],profile:['name','avatar'],close:[]};
   if (!Object.hasOwn(permitted,type)) fail('BAD_COMMAND','不支持这个操作。');
   payloadKeys(payload,permitted[type]);
   switch(type) {
@@ -84,6 +101,7 @@ export function applyCommand(original, actorId, type, payload = {}, context = {}
       if(g&&g.phase!=='finished')fail('GAME_RUNNING','本局昵称和头像已固定，请在大厅或结算后修改。');
       actor.name=nickname(payload.name);
       if (!AVATARS.includes(payload.avatar)) fail('BAD_AVATAR','请选择提供的头像。');
+      if(payload.avatar!==avatarId(actor.avatar)&&roomAvatarTaken(room,actorId,payload.avatar))fail('AVATAR_TAKEN','这张头像已被本桌玩家使用，请选另一张。');
       actor.avatar=payload.avatar;break;
     case 'ready':
       if (g) fail('WRONG_PHASE','请在大厅准备。');
@@ -91,13 +109,38 @@ export function applyCommand(original, actorId, type, payload = {}, context = {}
       actor.ready=payload.ready;break;
     case 'settings':
       host(room,actorId);if(g) fail('WRONG_PHASE','对局开始后不能修改角色配置。');
-      room.settings=settings(payload.settings);room.players.forEach(p=>p.ready=false);break;
+      room.settings=settings(payload.settings);readyOnlyBots(room);break;
+    case 'reorder': {
+      host(room,actorId);if(g)fail('WRONG_PHASE','只有大厅可以调整座次。');
+      const ids=payload.players, players=new Map(room.players.map(player=>[player.id,player]));
+      if(!Array.isArray(ids)||ids.length!==players.size||new Set(ids).size!==ids.length||ids.some(id=>!players.has(id)))fail('BAD_ORDER','座次必须包含当前全部玩家，请重新排列。');
+      room.players=ids.map(id=>players.get(id));break;
+    }
+    case 'addBot':
+    case 'fillBots': {
+      botLobby(room,actorId,context);
+      if(room.players.length>=10)fail('ROOM_FULL','房间已经坐满 10 人。');
+      const count=type==='addBot'?1:5-room.players.length;
+      if(count<=0)fail('BOT_FILL_COMPLETE','本桌已满 5 席，可以直接开局。');
+      const rng=context.random||randomInt;
+      for(let index=0;index<count;index++){
+        const name=BOT_NAMES.find(candidate=>!room.players.some(player=>player.bot&&player.name===candidate));
+        room.players.push({id:crypto.randomUUID(),name,avatar:freeAvatar(room,rng),ready:true,bot:true});
+      }
+      break;
+    }
+    case 'removeBot': {
+      botLobby(room,actorId,context);
+      if(!member(room,payload.playerId).bot)fail('BAD_TARGET','请选择一个机器人席位。');
+      room.players=room.players.filter(player=>player.id!==payload.playerId);break;
+    }
     case 'start': {
       host(room,actorId);if(g) fail('WRONG_PHASE','当前对局已开始。');
       if (!room.players.every(p=>p.ready)) fail('NOT_READY','请等待所有玩家准备。');
-      if (context.online && !room.players.every(p=>context.online.has(p.id))) fail('PLAYER_OFFLINE','有玩家离线，请等待重连。');
+      if (context.online && !room.players.every(p=>p.bot===true||context.online.has(p.id))) fail('PLAYER_OFFLINE','有玩家离线，请等待重连。');
       const roles=roleSet(room.players.length,room.settings,context.random||randomInt), first=(context.random||randomInt)(room.players.length);
       room.game={id:crypto.randomUUID(),phase:'reveal',roles:Object.fromEntries(room.players.map((p,i)=>[p.id,roles[i]])),confirmed:[],leader:first,questIndex:0,rejections:0,team:[],votes:{},questCards:{},results:[],proposals:[],ladyHolder:room.players[(first+room.players.length-1)%room.players.length].id,ladyHolders:[],ladyHistory:[],privateIntel:{},winner:null,reason:null};
+      if(room.players.some(player=>player.bot))room.game.botAssisted=true;
       room.game.ladyHolders=[room.game.ladyHolder];break;
     }
     case 'confirmRole':
@@ -149,19 +192,19 @@ export function applyCommand(original, actorId, type, payload = {}, context = {}
       if(payload.playerId===actorId)fail('BAD_TARGET','请选择另一位玩家。');
       g.assassinated=payload.playerId;finish(g,g.roles[payload.playerId]==='merlin'?'evil':'good',g.roles[payload.playerId]==='merlin'?'merlin-assassinated':'merlin-survived');break;
     case 'reset':
-      host(room,actorId);room.game=null;room.players.forEach(p=>p.ready=false);break;
+      host(room,actorId);room.game=null;readyOnlyBots(room);break;
     case 'kick':
       host(room,actorId);if(g)fail('WRONG_PHASE','只有大厅可以移出玩家。');
       if(payload.playerId===actorId)fail('BAD_TARGET','请使用离开房间。');member(room,payload.playerId);
       room.players=room.players.filter(p=>p.id!==payload.playerId);break;
     case 'transfer':
-      host(room,actorId);member(room,payload.playerId);room.hostId=payload.playerId;break;
+      host(room,actorId);if(member(room,payload.playerId).bot)fail('BAD_TARGET','不能将房主移交给机器人。');room.hostId=payload.playerId;break;
     case 'leave':
       if(g&&g.phase!=='finished')fail('GAME_RUNNING','对局中请先返回首页保留座位，或由房主结束本局。');
-      if(g){room.game=null;room.players.forEach(p=>p.ready=false);}
+      if(g){room.game=null;readyOnlyBots(room);}
       room.players=room.players.filter(p=>p.id!==actorId);
-      if(room.hostId===actorId)room.hostId=room.players[0]?.id||null;
-      if(!room.players.length)room.closed=true;break;
+      if(room.hostId===actorId)room.hostId=room.players.find(player=>!player.bot)?.id??null;
+      if(!room.hostId){room.closed=true;room.players=[];}break;
     case 'close':host(room,actorId);room.closed=true;room.game=null;break;
   }
   room.version++;room.updatedAt=context.now||Date.now();return room;
@@ -173,12 +216,14 @@ export function joinRoom(original,person,context={}) {
   if(original.game)fail('GAME_RUNNING','对局已经开始，暂时不能加入。');
   if(original.players.length>=10)fail('ROOM_FULL','房间已经坐满 10 人。');
   const room=structuredClone(original);
-  room.players.push({id:person.id,name:nickname(person.name),avatar:AVATARS.includes(person.avatar)?person.avatar:AVATARS[0],ready:false});
-  room.players.forEach(p=>p.ready=false);room.version++;room.updatedAt=context.now||Date.now();return room;
+  let avatar=avatarId(person.avatar);
+  if(roomAvatarTaken(room,person.id,avatar))avatar=freeAvatar(room,context.random||randomInt);
+  room.players.push({id:person.id,name:nickname(person.name),avatar,ready:false});
+  readyOnlyBots(room);room.version++;room.updatedAt=context.now||Date.now();return room;
 }
 export function playerView(room,actorId,online=new Set()) {
   if(!room.players.some(p=>p.id===actorId))fail('NOT_MEMBER','你已不在这个房间，请重新加入。');
-  const view={id:room.id,code:room.code,version:room.version,hostId:room.hostId,closed:room.closed,settings:{...room.settings},players:room.players.map(p=>({...p,online:online.has(p.id)})),me:actorId,game:null};
+  const view={id:room.id,code:room.code,version:room.version,hostId:room.hostId,closed:room.closed,settings:{...room.settings},players:room.players.map(p=>({...p,online:p.bot===true||online.has(p.id)})),me:actorId,game:null};
   const g=room.game;if(!g)return view;
   const role=g.roles[actorId], finished=g.phase==='finished';
   let intel=[];
@@ -189,6 +234,7 @@ export function playerView(room,actorId,online=new Set()) {
     threshold:room.players.length>=7&&g.questIndex===3?2:1,rejections:g.rejections,confirmed:[...g.confirmed],results:structuredClone(g.results),proposals:structuredClone(g.proposals),
     voted:Object.keys(g.votes),questSubmitted:Object.keys(g.questCards),myVote:g.votes[actorId]??null,myQuest:g.questCards[actorId]??null,
     myRole:role,intel,privateIntel:structuredClone(g.privateIntel[actorId]||[]),ladyHolder:g.ladyHolder,ladyHolders:[...g.ladyHolders],ladyHistory:structuredClone(g.ladyHistory),winner:g.winner,reason:g.reason};
+  if(g.botAssisted)view.game.botAssisted=true;
   if(g.phase==='assassin'&&role==='assassin')view.game.assassinId=actorId;
   if(finished){view.game.roles={...g.roles};view.game.assassinated=g.assassinated||null;}
   return view;

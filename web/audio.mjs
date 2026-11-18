@@ -1,12 +1,14 @@
 import {MUSIC_ASSETS} from '../shared/audio-assets.mjs';
+import {CINEMATIC_AUDIO} from '../shared/cinematic-audio.mjs';
 
-const SETTINGS_KEY = 'avalon.audio.v1';
-const DEFAULTS = {track:'auto',music:true,effects:true,musicVolume:34,effectsVolume:55};
+const SETTINGS_KEY = new URLSearchParams(globalThis.location?.search).has('display')
+  ? 'avalon.audio.display.v1' : 'avalon.audio.v1';
+const DEFAULTS = {track:'auto',music:true,effects:true,musicVolume:34,effectsVolume:55,privateEffects:true};
 const CROSSFADE = .48;
 export const AUDIO_TRACKS = Object.freeze({auto:'随对局切换',hall:'圆桌之厅',quest:'远征之路',dusk:'暮色与密誓'});
 
 const SCENE_TRACK = {
-  reveal:'dusk', nominate:'quest', vote:'quest', quest:'quest', questResult:'quest',
+  nominate:'quest', vote:'quest', quest:'quest', questResult:'quest',
   lady:'dusk', assassin:'dusk', finished:'dusk',
 };
 
@@ -35,6 +37,7 @@ function normalize(value, fallback = DEFAULTS) {
     effects:typeof value?.effects === 'boolean' ? value.effects : fallback.effects,
     musicVolume:volume('musicVolume'),
     effectsVolume:volume('effectsVolume'),
+    privateEffects:typeof value?.privateEffects === 'boolean' ? value.privateEffects : fallback.privateEffects,
   };
 }
 
@@ -43,11 +46,15 @@ try { settings = normalize(JSON.parse(globalThis.localStorage?.getItem(SETTINGS_
 catch { /* Storage is optional. */ }
 
 let scene = 'home';
+let winner = null;
 let context, musicBus, effectBus;
 let pendingTrack, playing;
 const songBuffers = new Map();
 const activeSongs = new Set();
 const activeNotes = new Set();
+const loadedCues = new Map();
+const cueLoads = new Map();
+const materialSources = new Map();
 
 export function getAudioSettings() { return {...settings}; }
 
@@ -59,18 +66,25 @@ export function setAudioSettings(patch,event) {
   if(event?.isTrusted)unlockAudio(event);
   syncMusic();
   if (!settings.effects || !settings.effectsVolume) stopNotes();
+  else if (!settings.privateEffects) {
+    for (const [source,own] of materialSources) if (own) stopMaterial(source);
+    for (const note of activeNotes) if (note.private) stopNote(note);
+  }
   return getAudioSettings();
 }
 
-export function setAudioScene(phase) {
-  if (scene === phase) return;
+export function setAudioScene(phase, ending={}) {
+  const side = phase==='finished' ? ending.winner??null : null;
+  if (scene === phase && side === winner) return;
   scene = phase;
+  winner = side;
   syncMusic();
 }
 
 function currentTrack() {
   if (document.hidden || !settings.music || !settings.musicVolume) return null;
   if (settings.track !== 'auto') return settings.track;
+  if (scene==='finished' && winner==='good') return 'quest';
   return SCENE_TRACK[scene] ?? 'hall';
 }
 
@@ -187,7 +201,7 @@ function unlockAudio(event) {
   resumeAudio();
 }
 
-function soundNote([pitch,offset,duration,level], now) {
+function soundNote([pitch,offset,duration,level], now, own) {
   const begin = now+offset;
   const frequency = 440 * 2 ** ((pitch-69)/12);
   const oscillator = context.createOscillator();
@@ -204,7 +218,7 @@ function soundNote([pitch,offset,duration,level], now) {
   shimmer.connect(overtone);
   overtone.connect(gain);
   gain.connect(effectBus);
-  const note = {oscillator,shimmer};
+  const note = {oscillator,shimmer,private:own};
   oscillator.onended = () => {
     activeNotes.delete(note);
     oscillator.disconnect();
@@ -217,20 +231,57 @@ function soundNote([pitch,offset,duration,level], now) {
   shimmer.start(begin);
   oscillator.stop(begin+duration);
   shimmer.stop(begin+duration);
+  return note;
+}
+
+function stopNote(note) {
+  if(!activeNotes.delete(note))return;
+  note.oscillator.stop();
+  note.shimmer.stop();
+}
+
+function stopMaterial(source) {
+  if(materialSources.delete(source))source.stop();
 }
 
 function stopNotes() {
-  for (const {oscillator,shimmer} of activeNotes) {
-    oscillator.stop();
-    shimmer.stop();
-  }
-  activeNotes.clear();
+  for (const note of activeNotes) stopNote(note);
+  for (const source of materialSources.keys()) stopMaterial(source);
 }
 
-export function playCue(name) {
-  if (!Object.hasOwn(CUES,name) || !settings.effects || !settings.effectsVolume || context?.state !== 'running' || document.hidden) return;
-  const now = context.currentTime;
-  for (const note of CUES[name]) soundNote(note,now);
+export function preloadCue(name) {
+  if (!Object.hasOwn(CINEMATIC_AUDIO,name) || !context || !settings.effects || loadedCues.has(name)) return;
+  if (cueLoads.has(name)) return cueLoads.get(name);
+  const load = fetch(CINEMATIC_AUDIO[name]).then(response => {
+    if (!response.ok) throw new Error('Cue unavailable');
+    return response.arrayBuffer();
+  }).then(buffer => context.decodeAudioData(buffer)).then(buffer => {
+    loadedCues.set(name,buffer);
+  }).catch(()=>{}).finally(()=>cueLoads.delete(name));
+  cueLoads.set(name,load);
+  return load;
+}
+
+export function playCue(name, options={}) {
+  const own = options.private === true;
+  if (!settings.effects || !settings.effectsVolume || own&&!settings.privateEffects ||
+      context?.state !== 'running' || document.hidden) return;
+  if (Object.hasOwn(CINEMATIC_AUDIO,name)) {
+    const sample = loadedCues.get(name);
+    if (!sample) { void preloadCue(name); return; }
+    const source = context.createBufferSource();
+    source.buffer = sample;
+    source.connect(effectBus);
+    source.onended = () => { materialSources.delete(source); source.disconnect(); };
+    materialSources.set(source,own);
+    source.start();
+    return ()=>stopMaterial(source);
+  }
+  if (Object.hasOwn(CUES,name)) {
+    const now = context.currentTime;
+    const playing = CUES[name].map(note=>soundNote(note,now,own));
+    return ()=>playing.forEach(stopNote);
+  }
 }
 
 if (globalThis.document) {

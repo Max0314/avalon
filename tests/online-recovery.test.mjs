@@ -11,7 +11,7 @@ const pending=()=>new Promise(resolve=>setImmediate(resolve));
 const response=(body,status=200)=>Response.json(body,{status});
 
 function harness(t,fetcher) {
-  const feeds=[],views=[],states=[],commandErrors=[];
+  const feeds=[],views=[],states=[],commandErrors=[],commandConfirmed=[];
   let identityChanges=0;
   const original=Object.getOwnPropertyDescriptor(globalThis,'EventSource');
   Object.defineProperty(globalThis,'EventSource',{configurable:true,value:class extends EventTarget{
@@ -23,7 +23,8 @@ function harness(t,fetcher) {
   t.mock.method(globalThis,'fetch',fetcher);
   const online=new Online(view=>views.push(view),(text,state)=>states.push({text,state}),{
     onIdentityChange:()=>identityChanges++,
-    onCommandError:message=>commandErrors.push(message)
+    onCommandError:message=>commandErrors.push(message),
+    onCommandConfirmed:message=>commandConfirmed.push(message),
   });
   online.person={id:'first-seat'};
   online.enter(snapshot());
@@ -32,7 +33,7 @@ function harness(t,fetcher) {
     if(original)Object.defineProperty(globalThis,'EventSource',original);
     else delete globalThis.EventSource;
   });
-  return {online,feeds,views,states,commandErrors,identityChanges:()=>identityChanges};
+  return {online,feeds,views,states,commandErrors,commandConfirmed,identityChanges:()=>identityChanges};
 }
 
 test('掉线通过受授权的快照追平，再恢复实时消息并丢弃旧流事件',async t=>{
@@ -132,7 +133,7 @@ test('离席消息先到时仍接受进行中的离席回执',async t=>{
   assert.equal(online.connectionState,'terminal');
 });
 
-test('服务器确认旧操作未提交且牌桌已推进时，恢复流程提醒玩家重试',async t=>{
+test('服务器确认旧操作未提交且牌桌已推进时，恢复流程点明未提交的操作',async t=>{
   const posted=[];
   const {online,feeds,commandErrors}=harness(t,async(path,opts)=>{
     if(opts.method==='GET')return response({view:snapshot(2)});
@@ -148,8 +149,29 @@ test('服务器确认旧操作未提交且牌桌已推进时，恢复流程提�
   t.mock.timers.tick(600);
   await pending();
   assert.equal(online.uncertain,null);
-  assert.deepEqual(commandErrors,['牌桌进度已变化，这次操作未提交。']);
+  assert.deepEqual(commandErrors,['牌桌进度已变化，「准备状态」未提交。']);
   assert.equal(new Set(posted).size,1,'恢复过程不以新版本替玩家提交旧操作');
+});
+
+test('掉线后用已持久化的离席回执确认离开，读取旧房间不再授权也能恢复',async t=>{
+  const posted=[];
+  const {online,feeds,views,commandConfirmed}=harness(t,async(path,opts)=>{
+    assert.equal(opts.method,'POST','离席恢复优先用原操作回执');
+    posted.push(opts.body);
+    if(posted.length<3)throw Error('offline');
+    return response({view:null,left:true,replayed:true});
+  });
+  feeds[0].send('snapshot',snapshot());
+  const rejected=assert.rejects(online.command('leave'),{code:'COMMAND_PENDING',message:/确认「离开房间」/});
+  await pending();
+  t.mock.timers.tick(450);
+  await rejected;
+  t.mock.timers.tick(600);
+  await pending();
+  assert.equal(views.at(-1),null);
+  assert.equal(online.connectionState,'terminal');
+  assert.deepEqual(commandConfirmed,['「离开房间」已确认成功。']);
+  assert.equal(new Set(posted).size,1);
 });
 
 test('HTTP 写入以 Cookie 实际识别的玩家核对旧席位，拒绝跨账号提交',async()=>{

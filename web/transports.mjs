@@ -7,13 +7,23 @@ const RECONNECT_MIN=600,RECONNECT_MAX=12000,CONNECT_TIMEOUT=12000,HEARTBEAT_TIME
 const uncertainReply=error=>['NETWORK','INTERNAL_ERROR','PERSISTENCE_UNAVAILABLE'].includes(error.code);
 const lostSeat=error=>['SEAT_CHANGED','UNAUTHENTICATED'].includes(error.code);
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const ACTION_NAMES={
+  ready:'准备状态',settings:'角色设置',reorder:'调整座次',start:'开局',confirmRole:'确认身份',
+  addBot:'添加机器人',fillBots:'补齐机器人席位',removeBot:'移除机器人',
+  nominate:'提交队伍',vote:'队伍表决',quest:'提交任务牌',continue:'推进任务',inspect:'湖中仙女查验',
+  assassinate:'最后指认',reset:'返回大厅',leave:'离开房间',kick:'移出玩家',transfer:'移交房主',
+  profile:'保存资料',close:'关闭房间',
+};
+const actionName=type=>Object.hasOwn(ACTION_NAMES,type)?ACTION_NAMES[type]:'本次操作';
+const pendingText=command=>`正在确认「${actionName(command.type)}」，尚未收到回执。`;
 
 export class Online {
-  constructor(onView,onStatus,{onIdentityChange,onCommandError}={}) {
+  constructor(onView,onStatus,{onIdentityChange,onCommandError,onCommandConfirmed}={}) {
     this.onView=onView;
     this.onStatus=onStatus;
     this.onIdentityChange=onIdentityChange;
     this.onCommandError=onCommandError;
+    this.onCommandConfirmed=onCommandConfirmed;
     this.kind='online';
     this.view=null;
     this.generation=0;
@@ -121,7 +131,9 @@ export class Online {
   async enterOnline(path,data,code) {
     const generation=this.generation;
     try{
-      const {view}=await this.request(path,data);
+      const {view,person}=await this.request(path,data);
+      if(person&&this.person?.id&&this.person.id!==person.id){this.identityChanged();throw new GameError('SEAT_CHANGED','在线身份已变化，请重新同步座位。');}
+      if(person)this.person=person;
       return this.enter(view);
     }catch(error){
       if(!uncertainReply(error)&&error.code!=='ALREADY_IN_ROOM')throw error;
@@ -137,7 +149,8 @@ export class Online {
   }
 
   create(settings){return this.enterOnline('/api/rooms',{settings});}
-  join(code){return this.enterOnline(`/api/rooms/${code}/join`,{},code);}
+  previewInvite(code){return this.request(`/api/rooms/${code}/invite`);}
+  join(code,{from,profile}={}){return this.enterOnline(`/api/rooms/${code}/join`,from?{from,profile}:{},code);}
 
   connect(code) {
     this.stopFeed();
@@ -223,7 +236,7 @@ export class Online {
   scheduleRecovery(feed,immediate=false) {
     if(this.feed!==feed||feed.retry!==undefined)return;
     this.stopEvents(feed);
-    if(this.connectionState!=='degraded')this.setStatus('正在重连','reconnecting');
+    if(this.connectionState!=='degraded')this.setStatus(this.uncertain?`重连中 · 确认${actionName(this.uncertain.type)}`:'正在重连','reconnecting');
     feed.retry=setTimeout(()=>{
       feed.retry=undefined;
       void this.recover(feed);
@@ -235,6 +248,11 @@ export class Online {
     if(this.feed!==feed||feed.syncing)return;
     feed.syncing=true;
     try{
+      // A successful leave revokes room reads, but its original receipt remains available.
+      if(this.uncertain?.type==='leave'){
+        await this.confirmPending(feed);
+        if(this.feed!==feed)return;
+      }
       const {view}=await this.request(`/api/rooms/${feed.code}`,undefined,{signal:feed.aborter.signal,timeout:8000});
       if(this.feed!==feed)return;
       this.accept(view);
@@ -246,8 +264,9 @@ export class Online {
     }catch(error){
       if(this.feed!==feed)return;
       if(lostSeat(error)){this.identityChanged();return;}
-      if(error.code==='ROOM_NOT_FOUND'){this.finishFeed('房间已过期');return;}
-      if(error.code==='NOT_MEMBER'){this.finishFeed('你已离开房间');return;}
+      const pending=this.uncertain?`，${actionName(this.uncertain.type)}结果未能核对`:'';
+      if(error.code==='ROOM_NOT_FOUND'){this.finishFeed('房间已过期'+pending);return;}
+      if(error.code==='NOT_MEMBER'){this.finishFeed('你已离开房间'+pending);return;}
       this.setStatus('连接中断，正在重试','reconnecting');
       this.scheduleRecovery(feed);
     }finally{feed.syncing=false;}
@@ -263,19 +282,24 @@ export class Online {
   }
 
   async confirmPending(feed) {
-    try{await this.submitCommand(feed,this.uncertain);}
+    const command=this.uncertain,generation=this.generation,label=actionName(command.type);
+    try{
+      await this.submitCommand(feed,command);
+      const ended=(!this.feed&&['leave','close'].includes(command.type));
+      if(generation===this.generation&&(this.feed===feed||ended))this.onCommandConfirmed?.(`「${label}」已确认成功。`);
+    }
     catch(error){
       if(this.feed!==feed)return;
       if(uncertainReply(error)||lostSeat(error)||['RATE_LIMIT','ROOM_NOT_FOUND','NOT_MEMBER'].includes(error.code))throw error;
       if(error.view)this.accept(error.view);
-      this.onCommandError?.(error.code==='STALE_VERSION'?'牌桌进度已变化，这次操作未提交。':error.message);
+      this.onCommandError?.(error.code==='STALE_VERSION'?`牌桌进度已变化，「${label}」未提交。`:`「${label}」未完成。${error.message}`);
     }
     if(this.feed===feed)this.uncertain=null;
   }
 
   async command(type,payload={}) {
     if(!this.feed||!this.view||this.view.closed)throw new GameError('NOT_MEMBER','请先恢复你的座位。');
-    if(this.uncertain)throw new GameError('COMMAND_PENDING','正在确认上一项操作，请稍候。');
+    if(this.uncertain)throw new GameError('COMMAND_PENDING',pendingText(this.uncertain));
     const generation=this.generation,key=actionKey(this.view),feed=this.feed;
     const command={id:crypto.randomUUID(),version:this.view.version,type,payload};
     let retriedNetwork=false,awaitingReceipt=false;
@@ -286,7 +310,7 @@ export class Online {
         if(this.feed!==feed)return this.view;
         if(lostSeat(error)){this.identityChanged();throw error;}
         if(error.view)this.accept(error.view);
-        if(error.code==='STALE_VERSION'&&actionKey(this.view)===key){
+        if(error.code==='STALE_VERSION'&&type!=='reorder'&&actionKey(this.view)===key){
           awaitingReceipt=false;
           command.version=this.view.version;
           continue;
@@ -304,7 +328,7 @@ export class Online {
         if(uncertainReply(error)||awaitingReceipt&&error.code==='RATE_LIMIT'){
           this.uncertain=command;
           this.scheduleRecovery(feed);
-          throw new GameError('COMMAND_PENDING','正在重连并确认本次操作。');
+          throw new GameError('COMMAND_PENDING',pendingText(command));
         }
         throw error;
       }
@@ -360,7 +384,7 @@ export class OfflineHost {
     await pc.setLocalDescription(await pc.createOffer());await gather(pc);
     return {pairId,text:await encodePair({kind:'offer',pairId,roomId:this.room.id,expires,sdp:pc.localDescription.sdp})};
   }
-  cancelPair(id){const p=this.pairs.get(id);if(p){p.pc.close();this.pairs.delete(id);}}
+  cancelPair(id){const p=this.pairs.get(id);if(p){this.pairs.delete(id);p.pc.close();}}
   async answer(text){const data=await decodePair(text,'answer'),pair=this.pairs.get(data.pairId);if(!pair||data.roomId!==this.room.id)throw new Error('回答码与当前邀请不匹配，请重新生成。');await pair.pc.setRemoteDescription({type:'answer',sdp:data.sdp});}
   bind(pc,dc,pairId){
     let actor=null;
@@ -388,7 +412,11 @@ export class OfflineHost {
       }catch(error){try{send(dc,{kind:'error',id:msg?.command?.id,code:error.code||'PAIR_ERROR',message:error instanceof GameError?error.message:'连接或加入失败，请检查房间是否已开始。',view:actor&&this.room.players.some(p=>p.id===actor)?playerView(this.room,actor,this.online()):null});}catch{}}
     };
     dc.onclose=()=>{if(actor&&this.peers.get(actor)?.dc===dc){this.peers.delete(actor);this.publish();}};
-    pc.onconnectionstatechange=()=>{if(['failed','closed'].includes(pc.connectionState))dc.close();};
+    pc.onconnectionstatechange=()=>{
+      if(!['failed','closed'].includes(pc.connectionState))return;
+      if(this.pairs.has(pairId))this.cancelPair(pairId);
+      else dc.close();
+    };
   }
   close(){for(const p of this.peers.values())p.pc.close();for(const p of this.pairs.values())p.pc.close();this.peers.clear();this.pairs.clear();}
 }

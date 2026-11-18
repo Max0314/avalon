@@ -4,8 +4,12 @@ import {drawQR,startScanner} from './qr.mjs';
 import {AVATARS as CATALOGUE,avatarId,avatarPath} from '../shared/fribench-game-kit/avatars.mjs';
 import {mountJournal} from '../shared/fribench-game-kit/journal-view.mjs';
 import {handbookMarkup,mountHandbook,roleArt} from './handbook.mjs';
-import {AUDIO_TRACKS,getAudioSettings,setAudioSettings,setAudioScene,playCue} from './audio.mjs';
-import {roundScene} from './scenes.mjs';
+import {AUDIO_TRACKS,getAudioSettings,setAudioSettings,playCue,preloadCue} from './audio.mjs';
+import {createSceneDirector} from './scenes.mjs';
+import {frontDoorMarkup,mountFrontDoor} from './front-door.mjs';
+import {mountSeatDrag} from './seat-drag.mjs';
+import {publishDisplay,openPublicDisplay,mountPublicDisplay} from './public-display.mjs';
+import {Practice} from './practice.mjs';
 
 const $=id=>document.getElementById(id),esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const LABEL={reveal:'确认身份',nominate:'队长组队',vote:'队伍表决',quest:'执行任务',questResult:'任务揭晓',lady:'湖中仙女',assassin:'刺杀梅林',finished:'终局揭晓'};
@@ -13,22 +17,25 @@ const SETTING_LABEL={percival:'派西维尔',morgana:'莫甘娜',mordred:'莫德
 const PROFILE_KEY='avalon.profile.v1';
 const query=new URLSearchParams(location.search);
 const inviteCode=query.get('room')?.toUpperCase()||'';
+const displayId=query.get('display');
 const defaultPerson=()=>({id:crypto.randomUUID(),name:'圆桌旅人',avatar:AVATARS[0]});
 let person;
 try{person=JSON.parse(localStorage.getItem(PROFILE_KEY));}catch{}
 person||=defaultPerson();
 let offlinePerson=person;
-let transport=null,view=null,busy=false,showHome=true,selection=new Set(),lastKey=null,settingsDraft=null,stopScan=null,pairId=null,toastTimer,sceneTimer;
+let transport=null,view=null,busy=false,showHome=true,selection=new Set(),lastKey=null,settingsDraft=null,stopScan=null,pairId=null,toastTimer;
+const stages=createSceneDirector({reading:()=>$('modal').open?$('modal'):null});
 const online=new Online(
   next=>{if(transport===online)accept(next);},
   (text,state)=>{if(transport===online)status(text,state==='idle'?'live':state);},
   {
     onIdentityChange:()=>{if(transport===online)resetOnlineIdentity();},
     onCommandError:message=>{if(transport===online)toast(message);},
+    onCommandConfirmed:message=>{if(transport===online)toast(message);},
   }
 );
-let accountAccess=null,guestPreview=null,cleanupJournal=null,homeDraft=null,clearDraft=false;
-let knownAccount,connecting=null,accountError=false,networkState='connecting',homeEdited=false;
+let accountAccess=null,guestPreview=null,cleanupJournal=null,cleanupDrag=null,handbook=null;
+let knownAccount,connecting=null,accountError=false,networkState='connecting',inviteHandled=false,inviteDismissed=false;
 
 window.addEventListener('fribench:account-change',event=>{
   const key=event.detail?.authenticated?event.detail.accountKey||'account':'guest';
@@ -47,9 +54,11 @@ window.addEventListener('fribench:account-change',event=>{
 
 function status(text,state){
   const node=$('network-state');
+  if(state==='reconnecting'&&networkState!=='reconnecting'){clearPrivate();dismissScene();}
   if(state==='live'&&['reconnecting','degraded'].includes(networkState))playCue('reconnect');
   networkState=state||(transport?.kind==='online'?'live':'local');
   if(node.textContent!==text)node.textContent=text;
+  node.title=text;
   node.dataset.state=networkState;
   $('retry-online').hidden=transport!==online||!['degraded','reconnecting'].includes(networkState);
   if($('retry-offline'))$('retry-offline').hidden=networkState!=='terminal';
@@ -81,6 +90,10 @@ function syncOnline(){
       if($('account-panel'))accountMenu();
       if(showHome)render();
       if(query.get('view')==='records'&&!$('modal').open)openRecords();
+      if(inviteCode&&!inviteHandled&&!$('modal').open){
+        inviteHandled=true;
+        void openInviteFromLink(inviteCode);
+      }
     }catch{
       if(!stillOnline(generation))return;
       accountError=true;
@@ -97,6 +110,7 @@ function syncOnline(){
   return connecting;
 }
 function resetOnlineIdentity(){
+  if(inviteCode&&!inviteDismissed)inviteHandled=false;
   online.close({clearIdentity:true});
   connecting=null;
   accountAccess=null;
@@ -104,7 +118,6 @@ function resetOnlineIdentity(){
   accountError=false;
   transport=online;
   person=defaultPerson();
-  clearDraft=true;
   closeDialog();
   accept(null);
   void syncOnline();
@@ -123,36 +136,31 @@ function clearDialog(){
   stopScan?.();stopScan=null;
   if(pairId&&transport?.kind==='offline-host')transport.cancelPair(pairId);
   pairId=null;
+  handbook=null;
   $('modal-feedback').hidden=true;
+  $('modal-round').hidden=true;
+  $('modal-actions').hidden=true;
+  $('modal-actions').replaceChildren();
   $('modal-body').replaceChildren();
 }
 function closeDialog(){if($('modal').open)$('modal').close();clearDialog();}
-function dialog(title,body,kind=''){
+function dialog(title,body,kind='',actions=''){
   closeDialog();
   $('modal').className=kind;
-  $('modal-body').innerHTML=`<h2 id="modal-title" class="dialog-title">${esc(title)}</h2>${body}`;
+  $('modal-title').textContent=title;
+  $('modal-body').innerHTML=body;
+  $('modal-actions').innerHTML=actions;
+  $('modal-actions').hidden=!actions;
   $('modal').showModal();
+  renderModalRound();
 }
-function dismissScene(){
-  clearTimeout(sceneTimer);
-  $('scene-notice').hidden=true;
-}
-function showScene(scene){
-  if(!scene||showHome||document.hidden||['degraded','reconnecting'].includes(networkState))return;
-  const banner=$('scene-notice');
-  dismissScene();
-  banner.innerHTML=`<span class="scene-symbol" data-icon="${scene.icon}" aria-hidden="true"></span><span><strong>${esc(scene.title)}</strong><small>${esc(scene.detail)}</small></span>`;
-  banner.dataset.tone=scene.tone;
-  banner.hidden=false;
-  playCue(scene.cue);
-  sceneTimer=setTimeout(dismissScene,2800);
-}
+const dismissScene=()=>stages.reset();
 function accept(next){
   recordOffline(next);
-  const scene=roundScene(view,next);
+  const previous=view;
   const different=view?.id!==next?.id;
   if(different||next?.closed||view?.game?.id!==next?.game?.id){
-    if(!next||next.closed||$('private-wrapper')||$('private-intel-dialog'))closeDialog();
+    if(!next||next.closed||$('private-wrapper')||$('private-intel-dialog')||$('private-player-clue'))closeDialog();
     dismissScene();
   }
   view=next;
@@ -162,15 +170,16 @@ function accept(next){
     const key=actionKey(next);
     if(key!==lastKey){selection.clear();lastKey=key;}
     const player=next.players.find(p=>p.id===next.me);
-    if(player)savePerson(player);
+    if(player&&transport.kind!=='practice')savePerson(player);
   }else showHome=true;
   render();
-  showScene(scene);
+  publishDisplay(view);
+  stages.update(previous,next,{live:!showHome&&!document.hidden&&!['degraded','reconnecting','connecting','terminal'].includes(networkState)});
 }
 function me(){return view?.players.find(p=>p.id===view.me);}
 function name(id){return view?.players.find(p=>p.id===id)?.name||'已离开的玩家';}
 function recordOffline(next){
-  if(!transport||transport.kind==='online'||next?.game?.phase!=='finished')return;
+  if(!transport||!transport.kind.startsWith('offline-')||next?.game?.phase!=='finished')return;
   try{const records=JSON.parse(localStorage.getItem('avalon.offline.journal.v1')||'[]');if(records.some(r=>r.id===next.game.id))return;const g=next.game;records.unshift({id:g.id,endedAt:Date.now(),winner:g.winner,players:next.players.map(p=>({name:p.name,avatar:avatarId(p.avatar),role:g.roles[p.id]}))});localStorage.setItem('avalon.offline.journal.v1',JSON.stringify(records.slice(0,100)));}catch{}
 }
 function openRecords(){
@@ -189,12 +198,48 @@ function showOfflineRecords(){
 function isHost(){return view?.me===view?.hostId;}
 const disabled=value=>value?' disabled':'';
 function avatarImage(value,size=36){return `<img class="game-avatar" src="${avatarPath(value)}" width="${size}" height="${size}" alt="">`;}
-function avatars(current){return `<details class="game-avatar-picker"><summary>${avatarImage(current)}选择头像 · ${CATALOGUE.length} 个</summary><div class="game-avatar-grid" role="group" aria-label="选择头像">${CATALOGUE.map(a=>`<button type="button" class="avatar-choice ${a.id===avatarId(current)?'active':''}" data-avatar="${a.id}" aria-label="选择${esc(a.name)}头像" aria-pressed="${a.id===avatarId(current)}">${avatarImage(a.id,52)}<span>${esc(a.name)}</span></button>`).join('')}</div></details>`;}
-function profileForm(){return `<div class="field"><label for="nickname">游戏昵称</label><input id="nickname" value="${esc(person.name)}" placeholder="1～30 个字符，昵称可以重复" maxlength="60" autocomplete="nickname"></div><div class="field"><label>圆桌形象 · 不修改账号中心</label>${avatars(person.avatar)}</div>${accountAccess?.signedIn?'<button type="button" id="use-account-profile" class="profile-account-use">使用我的账号昵称与头像</button>':''}`;}
+const GUEST_DRAFT='avalon.guest-draft.v2';
+const FUN_NAMES=['失眠骑士','摸鱼梅林','锅盖爵士','迷路吟游诗人','雪地大脚板','脆饼骑士','蘑菇队长','湖边钓鱼佬','热心猫头鹰','好奇马铃薯','银甲饭团','柠檬领主'];
+const pick=items=>items[crypto.getRandomValues(new Uint32Array(1))[0]%items.length];
+
+function randomProfile(current={},used=[]){
+  const free=CATALOGUE.filter(a=>!used.includes(a.id)&&a.id!==avatarId(current.avatar));
+  return {name:pick(FUN_NAMES.filter(value=>value!==current.name)),avatar:pick(free.length?free:CATALOGUE).id};
+}
+
+function newGuestProfile(){
+  if(accountAccess?.signedIn||person.name!=='圆桌旅人')return person;
+  try{
+    const saved=JSON.parse(localStorage.getItem(GUEST_DRAFT));
+    if(saved?.seat===person.id)return saved;
+  }catch{}
+  const draft={seat:person.id,...randomProfile()};
+  try{localStorage.setItem(GUEST_DRAFT,JSON.stringify(draft));}catch{}
+  return draft;
+}
+
+function avatars(current,used=[]){
+  const active=avatarId(current);
+  return `<details class="game-avatar-picker"><summary>${avatarImage(active)}选择头像</summary>
+    <div class="game-avatar-grid" role="group" aria-label="选择头像">${CATALOGUE.map(a=>{
+      const locked=used.includes(a.id)&&a.id!==active;
+      return `<button type="button" class="avatar-choice ${a.id===active?'active':''}" data-avatar="${a.id}" aria-label="${esc(a.name+(locked?'，已使用':''))}" aria-pressed="${a.id===active}"${disabled(locked)}>${avatarImage(a.id,52)}<span>${esc(a.name)}${locked?' · 已使用':''}</span></button>`;
+    }).join('')}</div></details>`;
+}
+
+function profileForm(p=person,used=[],random=false){
+  const available=used.includes(avatarId(p.avatar))&&random?{...p,avatar:randomProfile(p,used).avatar}:p;
+  return `<div class="field"><label for="nickname">游戏昵称</label><input id="nickname" value="${esc(available.name)}" maxlength="60" autocomplete="nickname"></div>
+    <div class="field">${avatars(available.avatar,used)}</div>
+    ${random?'<button type="button" id="shuffle-profile">换一组</button>':''}
+    ${accountAccess?.signedIn?'<button type="button" id="use-account-profile" class="profile-account-use">使用账号资料</button>':''}`;
+}
+
 function readProfile(){
   const container=$('modal').open?$('modal-body'):$('app');
   return {name:nickname(container.querySelector('#nickname')?.value??person.name),avatar:container.querySelector('.avatar-choice.active')?.dataset.avatar||person.avatar};
 }
+
 async function run(fn){
   if(busy)return;
   busy=true;
@@ -205,58 +250,41 @@ async function run(fn){
 async function command(type,payload={}){
   const activeTransport=transport;
   const result=await activeTransport.command(type,payload);
-  if(activeTransport===transport&&['ready','confirmRole','nominate','vote','quest','inspect','assassinate'].includes(type))playCue('submit');
+  if(activeTransport===transport&&type==='ready')playCue('submit');
   return result;
 }
 
 function renderHome(){
-  const root=$('app'), nicknameField=root.querySelector('#nickname');
-  if(clearDraft){homeDraft=null;homeEdited=false;clearDraft=false;}
-  else if(nicknameField){
-    homeDraft={name:homeEdited?nicknameField.value:person.name,avatar:homeEdited?root.querySelector('.avatar-choice.active')?.dataset.avatar??person.avatar:person.avatar,
-      code:$('join-code')?.value??'',avatarsOpen:root.querySelector('.game-avatar-picker')?.open,useAccount:nicknameField.dataset.useAccount};
+  const root=$('app');
+  if(!root.querySelector('.front-door')){
+    root.innerHTML=frontDoorMarkup();
+    mountFrontDoor(root,id=>guide('roles',id));
+    let hits=0,last=0;
+    root.querySelector('.portrait-readout h1').addEventListener('click',()=>{
+      const now=performance.now();
+      hits=now-last<420?hits+1:1;last=now;
+      if(hits===3){hits=0;previewScenes();}
+    });
   }
+  const reserved=Boolean(view&&!view.closed);
+  $('resume-current').hidden=!reserved;
+  $('close-own-room').hidden=!reserved;
+  $('create-online').disabled=busy||Boolean(connecting);
+  $('join-online').disabled=busy||Boolean(connecting);
+}
+
+function offlineMenu(){
   const saved=OfflineHost.saved();
-  const invited=/^[A-F0-9]{10}$/.test(inviteCode);
-  const blocked=busy||Boolean(connecting);
-  root.innerHTML=`
-    <section class="hero camelot">
-      <div class="hero-copy">
-        <p class="eyebrow">5–10 人 · 好友推理桌游</p>
-        <h1>阿瓦隆</h1>
-        <p>围坐圆桌，选出你信任的伙伴。</p>
-        <div class="hero-actions"><a class="button-link primary" href="#online-table">${invited?'前往邀请牌桌':'开始游戏'}</a><button id="home-handbook">角色图鉴</button></div>
-      </div>
-    </section>
-    ${view&&!view.closed?`<section class="notice resume-box"><div><strong>你已坐在${transport?.kind==='online'?'在线':'离线'}牌桌</strong><span>${esc(view.code)}${view.game?' · '+LABEL[view.game.phase]:''}</span></div><button id="resume-current" class="primary">继续本局</button></section>`:''}
-    <div class="home-grid">
-      <section class="panel home-panel identity-panel"><h2>你的圆桌身份</h2>${profileForm()}
-        <div class="account-shortcut"><span class="muted">${accountAccess?.signedIn?'已登录 Fribench':accountError?'账号暂不可用':'支持游客入座'}</span><button id="account-details">账号与席位</button></div>
-      </section>
-      <section id="online-table" class="panel home-panel"><h2>在线好友局</h2>
-        <p class="muted">用邀请链接或房间码入座，刷新后可恢复座位。</p>
-        <form id="join-form" class="join-form">
-          <label for="join-code">房间码或邀请链接</label>
-          <div class="form-row"><input id="join-code" placeholder="例如 8DA1E108C9" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="180"><button id="join-online" type="submit" class="primary"${disabled(blocked)}>加入牌桌</button></div>
-        </form>
-        <button id="create-online" class="full"${disabled(blocked)}>创建在线房间</button>
-      </section>
-      <section class="panel home-panel"><h2>离线同桌局</h2>
-        <p class="muted">在同一 Wi-Fi 或热点双向扫码，房主设备主持本局。</p>
-        <div class="actions-row"><button id="create-offline"${disabled(busy)}>创建离线房间</button><button id="join-offline"${disabled(busy)}>扫码加入</button></div>
-        ${saved?'<button id="restore-offline" class="full">恢复本机离线牌桌</button>':''}
-        <button id="prepare-offline" class="full"${disabled(busy)}>准备离线素材</button>
-      </section>
-    </div>
-    <div class="home-resources"><button id="home-records">游戏档案</button><button id="home-quests">任务人数表</button><button id="home-offline-records">本机离线记录</button></div>`;
-  $('join-code').value=homeDraft?.code??(invited?inviteCode:'');
-  if(homeDraft){
-    $('nickname').value=homeDraft.name;
-    if(homeDraft.useAccount)$('nickname').dataset.useAccount='true';
-    const picker=root.querySelector('.game-avatar-picker');
-    picker.open=Boolean(homeDraft.avatarsOpen);
-    selectAvatar(picker,homeDraft.avatar);
-  }
+  dialog('离线同桌',`<div class="stack-actions">
+    <button id="create-offline">创建离线房间</button><button id="join-offline">扫码加入</button>
+    ${saved?'<button id="restore-offline">恢复本机牌桌</button>':''}
+    <button id="practice-menu">人机练习</button><button id="prepare-offline">准备离线素材</button><button id="home-offline-records">本机离线记录</button>
+  </div>`);
+}
+
+function previewScenes(){
+  const options=[['deal','发放身份'],['vote','队伍表决'],['questGood','任务成功'],['questBad','任务失败'],['lady','湖中仙女'],['assassin','终局指认'],['winGood','好人胜利'],['winEvil','邪恶胜利']];
+  dialog('演出预览',`<div class="stack-actions"><button id="preview-audio">声音设置</button>${options.map(([id,label])=>`<button type="button" data-scene-demo="${id}">${label}</button>`).join('')}</div>`);
 }
 
 function accountMenu(check=true){
@@ -296,161 +324,236 @@ function soundSettings(){
     </section>
     <section><label class="audio-toggle"><input type="checkbox" data-audio="effects"${prefs.effects?' checked':''}>操作音效</label>
       <label class="audio-range">音效音量 <output id="effectsVolume-value">${prefs.effectsVolume}%</output><input type="range" data-audio="effectsVolume" value="${prefs.effectsVolume}" min="0" max="100"></label>
+      <label class="audio-toggle"><input type="checkbox" data-audio="privateEffects"${prefs.privateEffects?' checked':''}>播放私密音效</label>
       <button id="preview-sound">试听音效</button>
     </section><p class="muted">声音设置保存在当前设备。</p></div>`);
 }
 function roomTop(){
-  const mode={online:'在线好友局','offline-host':'离线同桌 · 你是主持人','offline-guest':'离线同桌'}[transport.kind];
-  return `<section class="room-top">
-    <div><span class="mode-label">${mode}</span><h1>${view.game?'卡美洛圆桌':'房间大厅'}</h1><span class="room-code">${esc(view.code)}</span></div>
+  const mode={online:'在线好友局','offline-host':'离线主持','offline-guest':'离线同桌',practice:'本机练习'}[transport.kind];
+  return `<section class="room-top" aria-label="房间工具">
+    <div><span class="mode-label">${mode}</span><h1>${view.game?'卡美洛圆桌':'房间大厅'}</h1><span class="room-code">${esc(view.code||'练习牌桌')}</span></div>
     <div class="room-tools">
-      ${transport.kind==='online'?'<button id="invite" class="primary">邀请朋友</button>':transport.kind==='offline-host'?'<button id="pair-host" class="primary">添加 / 重连玩家</button>':`<button id="retry-offline"${networkState==='terminal'?'':' hidden'}>重新扫码</button>`}
-      ${!view.game||view.game.phase==='finished'?'<button id="profile">我的资料</button><button id="player-records">游戏档案</button>':''}
-      ${view.game&&view.game.phase!=='finished'?'<button id="peek-role-mobile" class="mobile-role">我的身份</button>':''}
-      <button id="go-home">返回首页</button>${isHost()?'<button id="room-menu">房主管理</button>':'<button id="leave-room">离开房间</button>'}
-    </div>
-  </section>`;
+      ${transport.kind==='online'?'<button id="invite">邀请</button>':transport.kind==='offline-host'?'<button id="pair-host">配对</button>':transport.kind==='offline-guest'?`<button id="retry-offline"${networkState==='terminal'?'':' hidden'}>重新扫码</button>`:''}
+      <button id="public-screen">大屏</button>
+      <button id="go-home">首页</button><button id="room-menu">菜单</button>
+    </div></section>`;
 }
-function settingFields(){
-  const settings=settingsDraft||view.settings;
-  return `<div class="settings-grid">${Object.entries(SETTING_LABEL).map(([key,label])=>
-    `<label class="setting"><input id="setting-${key}" type="checkbox" data-setting="${key}"${settings[key]?' checked':''}${disabled(!isHost()||busy)}>${label}</label>`).join('')}</div>`;
-}
-function renderLobby(){
-  const allReady=view.players.every(p=>p.ready&&p.online),validCount=!!SIZES[view.players.length];
+
+function settingFields(suffix=''){
   const options=settingsDraft||view.settings;
-  const specialEvil=1+['morgana','mordred','oberon'].filter(role=>options[role]).length;
-  const capacity=EVIL[view.players.length];
-  const fits=!capacity||specialEvil<=capacity;
-  const roster=view.players.map((p,i)=>`<div class="roster-item ${p.id===view.me?'mine':''} ${p.online?'':'disconnected'}">
-    <span class="seat-index">${String(i+1).padStart(2,'0')}</span>${avatarImage(p.avatar,42)}
-    <div class="roster-name">${esc(p.name)}${p.id===view.me?' · 你':''}<small>${p.id===view.hostId?'房主 · ':''}${p.online?'已连接':'等待重连'}</small></div>
-    <span class="${p.ready?'ready':'muted'}">${p.ready?'已准备':'未准备'}</span>${isHost()&&p.id!==view.me?`<button data-kick="${p.id}" aria-label="移出 ${esc(p.name)}">移出</button>`:''}
+  return `<div class="settings-grid">${Object.entries(SETTING_LABEL).map(([key,label])=>
+    `<label class="setting"><input id="setting-${key}${suffix}" type="checkbox" data-setting="${key}"${options[key]?' checked':''}${disabled(!isHost()||busy||transport.kind==='practice')}>${label}</label>`).join('')}</div>`;
+}
+
+function roleSettingsBody(suffix=''){
+  const fit=EVIL[view.players.length];
+  const chosen=1+['morgana','mordred','oberon'].filter(role=>(settingsDraft||view.settings)[role]).length;
+  return `${settingFields(suffix)}<p class="role-list" data-role-limit>${fit&&chosen>fit?`本桌 ${fit} 个邪恶席位，当前选择了 ${chosen} 个特殊邪恶角色。`:'梅林和刺客固定入场。'}</p>`;
+}
+
+function showRoomSettings(){
+  dialog('本局角色',roleSettingsBody('-modal'),'lobby-config',
+    `${isHost()&&transport.kind!=='practice'?'<button id="save-settings" class="primary">保存角色设置</button>':''}<button id="guide-room">角色图鉴</button>`);
+}
+
+function renderLobby(){
+  const players=view.players, count=players.length, validCount=Boolean(SIZES[count]);
+  const ready=players.filter(p=>p.ready&&p.online).length;
+  const fits=!EVIL[count]||1+['morgana','mordred','oberon'].filter(role=>(settingsDraft||view.settings)[role]).length<=EVIL[count];
+  const roster=players.map((p,i)=>`<div class="roster-item ${p.id===view.me?'mine':''}" data-player-row="${p.id}">
+    <span class="seat-index">${i+1}</span><button class="roster-profile" data-player-info="${p.id}" aria-label="${esc(p.name)}，${p.ready?'已准备':'未准备'}${p.online?'':'，离线'}">
+    ${avatarImage(p.avatar,38)}<span class="roster-name">${esc(p.name)}${p.id===view.me?' · 你':''}${p.bot?' · 人机':''}</span></button>
+    <span class="roster-dot" data-ready="${p.ready&&p.online}" title="${p.ready?'已准备':'未准备'}" aria-hidden="true">${p.online?(p.ready?'●':'○'):'×'}</span>
   </div>`).join('');
-  const readyCount=view.players.filter(p=>p.ready&&p.online).length;
   $('app').innerHTML=roomTop()+`<div class="room-columns">
-    <section class="panel"><div class="panel-heading"><h2>圆桌席位</h2><span class="badge">${view.players.length} / 10 人</span></div>
-      <div class="roster">${roster}</div>
-      <p class="role-list">${validCount?`${view.players.length-EVIL[view.players.length]} 位好人 · ${EVIL[view.players.length]} 位邪恶 · ${readyCount}/${view.players.length} 人就绪`:`至少需要 5 人开局，还差 ${5-view.players.length} 人。`}</p>
-      <div class="lobby-bottom"><button id="ready" class="${me().ready?'':'primary'}"${disabled(busy)}>${me().ready?'取消准备':'我准备好了'}</button>${isHost()?`<button id="start" class="primary"${disabled(busy||!validCount||!allReady||!fits||settingsDraft)}>发放身份</button>`:''}</div>
+    <section class="panel lobby-roster-panel"><div class="panel-heading"><h2>圆桌席位</h2><span class="badge">${count} / 10</span></div>
+      <div class="roster" data-scroll="roster" id="room-roster">${roster}</div>
+      <div class="lobby-ready"><p class="role-list">${validCount?`${ready} / ${count} 人就绪`:`还差 ${5-count} 人开局`}${transport===online&&players.some(p=>p.bot)?' · 人机局不计公开排行':''}</p>
+      <div class="lobby-bottom"><button id="ready" class="${me().ready?'':'primary'}"${disabled(busy)}>${me().ready?'取消准备':'准备'}</button>
+        ${isHost()?`<button id="start" class="primary"${disabled(busy||!validCount||ready!==count||!fits||settingsDraft)}>开局</button>`:''}
+        ${isHost()&&transport===online&&count<5?`<button id="fill-room-bots"${disabled(busy)}>人机补位</button>`:''}
+        <button class="lobby-mobile-settings" id="lobby-mobile-settings">本局角色</button>
+      </div></div>
     </section>
-    <section class="panel"><h2>本局角色</h2><p class="muted">梅林和刺客固定加入。保存新配置后，全员需要重新准备。</p>
-      ${settingFields()}${isHost()?`<button id="save-settings" class="full"${disabled(busy||!settingsDraft)}>保存角色设置</button>`:''}
-      ${!fits?`<p class="role-list role-limit">已选 ${specialEvil} 位特殊邪恶角色，本桌有 ${capacity} 个邪恶席位。开局前请减少角色或增加玩家。</p>`:settingsDraft?'<p class="role-list">保存后才会应用到本局。</p>':''}
-      <button id="guide-room" class="full role-reference">查看角色图鉴</button>
-    </section>
-  </div>`;
+    <section class="panel lobby-settings-panel inner-scroll"><h2>本局角色</h2>${roleSettingsBody()}
+      ${isHost()&&transport.kind!=='practice'?`<button id="save-settings-inline" class="full"${disabled(busy||!settingsDraft)}>保存角色设置</button>`:''}
+      <button id="guide-room-desktop" class="full role-reference">角色图鉴</button>
+    </section></div>`;
+  if(isHost()&&!busy&&transport.kind!=='practice'){
+    const version=view.version;
+    cleanupDrag=mountSeatDrag($('room-roster'),ids=>{if(view?.version===version&&!view.game)void run(()=>command('reorder',{players:ids}));});
+  }
 }
-function history(){const g=view.game;return `<details class="history" id="history"><summary>公开记录 · ${g.proposals.length} 次组队表决</summary><div class="history-body">${g.proposals.length?g.proposals.map((p,i)=>`<div class="history-item"><p>第 ${p.quest} 轮 · 第 ${i+1} 次提案 · ${p.approved?'通过':'未通过'}</p><p class="muted">队长 ${esc(name(p.leaderId))} · 出征：${p.team.map(id=>esc(name(id))).join('、')}</p><div class="vote-grid">${view.players.map(player=>`<span class="vote-tag ${p.votes[player.id]?'yes':'no'}">${esc(player.name)} ${p.votes[player.id]?'赞成':'反对'}</span>`).join('')}</div></div>`).join(''):'<p class="muted">所有人提交表决后，才会同时公布每个人的选择。</p>'}${g.results.map(r=>`<div class="history-item"><p>第 ${r.quest} 轮任务：${r.success?'成功':'失败'}</p><p class="muted">成功 ${r.successes} 张 · 失败 ${r.fails} 张 · 失败门槛 ${r.threshold} 张</p></div>`).join('')}${g.ladyHistory.map(r=>`<p class="history-item">第 ${r.quest} 轮后，${esc(name(r.from))} 查验了 ${esc(name(r.to))}。阵营只向查验者显示。</p>`).join('')}</div></details>`;}
-function actionPanel(){const g=view.game,host=isHost(),selected=[...selection];let title='',text='',buttons='';
-  if(g.phase==='reveal'){title='你的身份已封入卡牌';text=`已确认 ${g.confirmed.length} / ${view.players.length} 人。查看自己的身份与专属信息后再确认。`;buttons=`<button id="peek-role" class="primary">按住查看身份</button>`;}
-  if(g.phase==='nominate'){title=g.leaderId===view.me?'由你挑选出征队伍':`等待 ${name(g.leaderId)} 组队`;text=`本轮需要 ${g.needed} 人${g.threshold===2?'；这一轮需要至少两张失败牌才会失败':''}。${g.leaderId===view.me?'点击圆桌上的玩家，选好后确认。':'可以先开麦讨论，队长确认队伍后进入表决。'}`;if(g.leaderId===view.me)buttons=`<button id="nominate" class="primary"${disabled(busy||selected.length!==g.needed)}>确认出征队伍（${selected.length}/${g.needed}）</button>`;}
-  if(g.phase==='vote'){title='是否赞成这支队伍？';text=`出征：${g.team.map(id=>name(id)).join('、')}。已表决 ${g.voted.length}/${view.players.length} 人。${g.myVote===null?'所有人提交后统一公开表决。':`你已提交${g.myVote?'赞成':'反对'}，请等待其他玩家。`}`;if(g.myVote===null)buttons=`<button id="vote-yes" class="primary"${disabled(busy)}>赞成出征</button><button id="vote-no"${disabled(busy)}>反对出征</button>`;}
-  if(g.phase==='quest'){const inTeam=g.team.includes(view.me);title=inTeam?'提交你的任务牌':'等待队员执行任务';text=`已提交 ${g.questSubmitted.length}/${g.team.length} 人。${inTeam?'个人出牌不会公开，所有牌收齐后只显示汇总。':'你不在本轮出征队伍中，可以继续观察和讨论。'}`;if(inTeam&&g.myQuest===null)buttons=`<button id="quest-success" class="primary"${disabled(busy)}>任务成功</button>${ROLES[g.myRole].side==='evil'?`<button id="quest-fail" class="danger"${disabled(busy)}>任务失败</button>`:''}`;else if(inTeam)text+=' 你的任务牌已提交。';}
-  if(g.phase==='questResult'){const r=g.results.at(-1);title=`第 ${r.quest} 轮任务${r.success?'成功':'失败'}`;text=`成功 ${r.successes} 张，失败 ${r.fails} 张；本轮需要 ${r.threshold} 张失败牌才会失败。${host?'讨论结束后，由你推进下一阶段。':'等待房主推进下一阶段。'}`;if(host)buttons=`<button id="continue" class="primary"${disabled(busy)}>继续下一阶段</button>`;}
-  if(g.phase==='lady'){const mine=g.ladyHolder===view.me;title=mine?'由你使用湖中仙女':`等待 ${name(g.ladyHolder)} 查验`;text='请选择一位未持有过湖中仙女的玩家。结果只给查验者，标记随后交给被查验者。';if(mine)buttons=`<button id="inspect" class="primary"${disabled(busy||selected.length!==1)}>查验${selected.length?' '+esc(name(selected[0])):''}</button>`;}
-  if(g.phase==='assassin'){const mine=g.myRole==='assassin';title=mine?'最后一击，由你决定':'好人已完成三次任务';text=mine?'与邪恶同伴讨论后，选择你认为的梅林。指认一旦确认就会结算，不能反悔。':'等待刺客作出最终选择。此时仍可继续语音讨论。';if(mine)buttons=`<button id="assassinate" class="danger"${disabled(busy||selected.length!==1)}>确认刺杀${selected.length?' '+esc(name(selected[0])):''}</button>`;}
-  return `<section class="action-panel"><h3>${esc(title)}</h3><p>${esc(text)}</p>${buttons?`<div class="actions-row">${buttons}</div>`:''}</section>`;
+
+function history(){const g=view.game;return `<details class="history" id="history"><summary>公开记录 · ${g.proposals.length} 次组队表决</summary><div class="history-body" data-scroll="history">${g.proposals.length?g.proposals.map((p,i)=>`<div class="history-item"><p>第 ${p.quest} 轮 · 第 ${i+1} 次提案 · ${p.approved?'通过':'未通过'}</p><p class="muted">队长 ${esc(name(p.leaderId))} · 出征：${p.team.map(id=>esc(name(id))).join('、')}</p><div class="vote-grid">${view.players.map(player=>`<span class="vote-tag ${p.votes[player.id]?'yes':'no'}">${esc(player.name)} ${p.votes[player.id]?'赞成':'反对'}</span>`).join('')}</div></div>`).join(''):'<p class="muted">所有人提交表决后，才会同时公布每个人的选择。</p>'}${g.results.map(r=>`<div class="history-item"><p>第 ${r.quest} 轮任务：${r.success?'成功':'失败'}</p><p class="muted">成功 ${r.successes} 张 · 失败 ${r.fails} 张 · 失败门槛 ${r.threshold} 张</p></div>`).join('')}${g.ladyHistory.map(r=>`<p class="history-item">第 ${r.quest} 轮后，${esc(name(r.from))} 查验了 ${esc(name(r.to))}。阵营只向查验者显示。</p>`).join('')}</div></details>`;}
+function actionPanel(){
+  const g=view.game,host=isHost(),selected=[...selection];
+  let title='',summary='',controls='';
+  switch(g.phase){
+    case 'reveal': {
+      const confirmed=g.confirmed.includes(view.me);
+      title=confirmed?'已确认身份':'查看你的身份';
+      summary=`${g.confirmed.length} / ${view.players.length} 人已确认`;
+      controls='<button id="peek-role" class="primary">打开身份卡</button>';break;
+    }
+    case 'nominate': {
+      const mine=g.leaderId===view.me;
+      title=mine?'选择出征队员':'等待队长组队';
+      summary=`${g.needed} 人出征${g.threshold===2?' · 本轮需两张失败牌':''}`;
+      if(mine)controls=`<button id="nominate" class="primary"${disabled(busy||selected.length!==g.needed)}>确认队伍 ${selected.length}/${g.needed}</button>`;
+      break;
+    }
+    case 'vote':
+      title=g.myVote===null?'表决出征队伍':'你的表决已封存';
+      summary=`${g.voted.length} / ${view.players.length} 人已提交 · 全员提交后揭票`;
+      if(g.myVote===null)controls=`<button id="vote-yes" class="primary"${disabled(busy)}>赞成</button><button id="vote-no"${disabled(busy)}>反对</button>`;
+      break;
+    case 'quest': {
+      const inTeam=g.team.includes(view.me);
+      title=inTeam?(g.myQuest===null?'秘密提交任务牌':'你的任务牌已封存'):'等待队员交牌';
+      summary=`${g.questSubmitted.length} / ${g.team.length} 人已交牌`;
+      if(inTeam&&g.myQuest===null)controls=`<button id="quest-success" class="primary"${disabled(busy)}>成功</button>${ROLES[g.myRole].side==='evil'?`<button id="quest-fail" class="danger"${disabled(busy)}>失败</button>`:''}`;
+      break;
+    }
+    case 'questResult': {
+      const r=g.results.at(-1);
+      title=`第 ${r.quest} 轮${r.success?'成功':'失败'}`;
+      summary=`成功 ${r.successes} 张 · 失败 ${r.fails} 张`;
+      if(host)controls=`<button id="continue" class="primary"${disabled(busy)}>继续</button>`;
+      break;
+    }
+    case 'lady': {
+      const mine=g.ladyHolder===view.me;
+      title=mine?'选择查验对象':'等待湖中仙女查验';
+      summary='结果只向本次查验者展示';
+      if(mine)controls=`<button id="inspect" class="primary"${disabled(busy||selected.length!==1)}>确认查验</button>`;
+      break;
+    }
+    case 'assassin': {
+      const mine=g.myRole==='assassin';
+      title=mine?'选择你怀疑是梅林的玩家':'等待刺客指认';
+      summary='指认后立即揭晓结局';
+      if(mine)controls=`<button id="assassinate" class="danger"${disabled(busy||selected.length!==1)}>确认指认</button>`;
+      break;
+    }
+  }
+  return `<section class="action-panel"><h3>${esc(title)}</h3><p>${esc(summary)}</p><div class="actions-row">${controls}</div></section>`;
 }
-function renderGame(){
-  const g=view.game,historyOpen=$('history')?.open;
-  if(g.phase==='finished'){renderEnd();return;}
-  const canTeam=g.phase==='nominate'&&g.leaderId===view.me;
-  const canLady=g.phase==='lady'&&g.ladyHolder===view.me;
-  const canAssassin=g.phase==='assassin'&&g.myRole==='assassin';
-  const canSelect=canTeam||canLady||canAssassin;
+
+function canPick(g,id){
+  return g.phase==='nominate'&&g.leaderId===view.me
+    ||g.phase==='lady'&&g.ladyHolder===view.me&&!g.ladyHolders.includes(id)
+    ||g.phase==='assassin'&&g.myRole==='assassin'&&id!==view.me;
+}
+
+function tableMarkup(ended=false){
+  const g=view.game;
+  const good=g.results.filter(r=>r.success).length, evil=g.results.length-good;
   const seats=view.players.map((p,i)=>{
-    const selectable=canTeam||canLady&&!g.ladyHolders.includes(p.id)||canAssassin&&p.id!==view.me;
     const selected=selection.has(p.id);
-    const tags=[
-      g.leaderId===p.id?'队长':'',
-      g.team.includes(p.id)?'出征':'',
-      g.phase==='vote'&&g.voted.includes(p.id)?'已投票':'',
-      g.phase==='quest'&&g.questSubmitted.includes(p.id)?'已交牌':'',
-      g.phase==='reveal'&&g.confirmed.includes(p.id)?'已确认':'',
-      !p.online?'离线':'',
+    const selectable=!ended&&canPick(g,p.id);
+    const clue=ended||!g.confirmed.includes(view.me)?null:g.intel.find(info=>info.id===p.id);
+    const marks=[
+      g.leaderId===p.id?['队','队长']:null, g.team.includes(p.id)?['阵','出征']:null,
+      g.phase==='vote'&&g.voted.includes(p.id)?['票','已投票']:null,
+      g.phase==='quest'&&g.questSubmitted.includes(p.id)?['牌','已交牌']:null,
+      g.phase==='reveal'&&g.confirmed.includes(p.id)?['已','已确认']:null,
+      clue?['线',clue.label,'private']:null
     ].filter(Boolean);
+    const publicRole=ended?ROLES[g.roles[p.id]]:null;
     return `<div class="seat ${p.online?'':'seat-away'}">
-      <button class="seat-button ${p.id===view.me?'self':''} ${selected?'selected':''}" data-seat="${p.id}" aria-label="${selectable?'选择 ':'玩家 '}${esc(p.name)}${tags.length?' · '+tags.join(' · '):''}" aria-pressed="${selected}"${disabled(!selectable||busy)}>
+      <button class="seat-button ${p.id===view.me?'self':''} ${selected?'selected':''}" data-seat="${p.id}" aria-label="${esc((selectable?'选择 ':'查看 ')+p.name+(marks.length?' · '+marks.map(m=>m[1]).join(' · '):''))}"${selectable?` aria-pressed="${selected}"`:''}${disabled(busy)}>
         <span class="seat-number">${i+1}</span><span class="seat-icon">${avatarImage(p.avatar,36)}</span>
         <span class="seat-name">${esc(p.name)}${p.id===view.me?' · 你':''}</span>
-        <span class="seat-flags">${tags.join(' · ')}</span></button>
-    </div>`;
+        ${publicRole?`<span class="seat-public-role ${publicRole.side}">${publicRole.name}</span>`:`<span class="seat-flags" aria-hidden="true">${marks.map(([symbol,label,kind])=>`<i class="seat-state-dot" data-kind="${kind||'public'}" title="${esc(label)}">${symbol}</i>`).join('')}</span>`}
+      </button></div>`;
   }).join('');
+  return `<div class="table-area"><div class="round-table" data-count="${view.players.length}">
+    <div class="table-centre"><span class="table-emblem" aria-hidden="true"></span><small>${ended?'终局':`第 ${g.questIndex+1} 次远征`}</small>
+      <strong>${good} : ${evil}</strong><small>好人 / 邪恶</small></div>${seats}</div></div>`;
+}
+
+function renderGame(){
+  const g=view.game;
+  const historyOpen=$('history')?.open;
+  if(g.phase==='finished'){renderEnd();return;}
   const track=SIZES[view.players.length].map((size,index)=>{
     const result=g.results[index];
-    return `<div class="quest-slot ${index===g.questIndex?'current':''} ${result?(result.success?'success':'fail'):''}">
-      <span>第 ${index+1} 轮</span><b>${result?(result.success?'成功':'失败'):size+' 人'}</b>
-      <small>${view.players.length>=7&&index===3?'两张失败牌':result?'已揭晓':'一张失败牌'}</small>
-    </div>`;
+    const threshold=view.players.length>=7&&index===3?'两张失败牌':'一张失败牌';
+    return `<div class="quest-slot ${index===g.questIndex?'current':''} ${result?(result.success?'success':'fail'):''}" title="${threshold}">
+      <span>第 ${index+1} 轮</span><b>${result?(result.success?'成功':'失败'):size+' 人'}</b></div>`;
   }).join('');
-  const goodCount=g.results.filter(r=>r.success).length;
-  const evilCount=g.results.length-goodCount;
-  $('app').innerHTML=roomTop()+`<div class="game-layout">
-    <section class="play-area" data-phase="${g.phase}">
-      <div class="quest-track" aria-label="任务进度">${track}</div>
-      <div class="phase-heading"><h2>${LABEL[g.phase]}</h2>
-        <div class="rejection-track" aria-label="连续 ${g.rejections} 次未通过"><span>连拒 ${g.rejections}/5</span>${Array.from({length:5},(_,i)=>`<i class="pip ${i<g.rejections?'on':''}" aria-hidden="true"></i>`).join('')}</div>
-      </div>
-      ${canSelect?'':actionPanel()}
-      <div class="round-table" data-count="${view.players.length}">
-        <div class="table-centre"><span class="table-emblem" aria-hidden="true"></span><small>第 ${g.questIndex+1} 次远征</small><strong>${goodCount} <span aria-hidden="true">:</span> ${evilCount}</strong><small>好人 / 邪恶</small></div>
-        ${seats}
-      </div>
-      ${canSelect?actionPanel():''}
-    </section>
-    <aside class="side-panel">
-      <button class="role-secret" id="peek-role-sidebar"><span class="sigil" aria-hidden="true"></span><span>我的秘密身份<small>按住查看，松开遮住</small></span></button>
-      ${g.privateIntel.length?'<button id="private-intel" class="full">我的查验记录</button>':''}
-      <button id="guide-game" class="full">圆桌手册</button>
-      ${history()}
-    </aside>
-  </div>`;
-  if(historyOpen&&$('history'))$('history').open=true;
+  $('app').innerHTML=roomTop()+`<div class="game-layout"><section class="play-area" data-phase="${g.phase}">
+    <div class="quest-track" aria-label="任务进度">${track}</div>
+    <div class="phase-heading"><h2>${LABEL[g.phase]}</h2><div class="rejection-track"><span>连拒 ${g.rejections}/5</span>${Array.from({length:5},(_,i)=>`<i class="pip ${i<g.rejections?'on':''}" aria-hidden="true"></i>`).join('')}</div></div>
+    ${tableMarkup()}${actionPanel()}
+    <div class="table-shortcuts"><button id="public-history">记录</button><button id="guide-game">手册</button>${g.privateIntel.length?'<button id="private-intel">我的查验</button>':''}</div>
+  </section><aside class="side-panel">
+    <button id="guide-game-desktop" class="full">圆桌手册</button>
+    ${g.privateIntel.length?'<button id="private-intel-desktop" class="full">我的查验记录</button>':''}${history()}
+  </aside></div>`;
+  if(historyOpen)$('history').open=true;
 }
 
 function renderEnd(){
   const g=view.game;
-  const reason={
-    'five-rejections':'连续五次组队未通过，邪恶阵营获胜。',
-    'three-fails':'三次任务失败，邪恶阵营获胜。',
-    'merlin-assassinated':`${name(g.assassinated)} 被刺中，梅林暴露了身份。`,
-    'merlin-survived':`刺客指认了 ${name(g.assassinated)}，梅林成功隐藏。`
-  }[g.reason]||'';
-  const historyOpen=$('history')?.open;
-  $('app').innerHTML=roomTop()+`
-    <section class="end-hero ${g.winner}">
-      <p class="eyebrow">终局 · 身份揭晓</p>
-      <h2>${g.winner==='good'?'好人守住了卡美洛':'邪恶笼罩了卡美洛'}</h2><p>${esc(reason)}</p>
-      ${isHost()?'<button id="rematch" class="primary">回到大厅，再来一局</button>':'<p class="muted">等待房主发起下一局。</p>'}
-    </section>
-    <section class="panel outcome"><h2>本局身份</h2><div class="end-roles">
-      ${view.players.map(p=>{
-        const roleId=g.roles[p.id],r=ROLES[roleId];
-        return `<article class="end-role ${r.side}">
-          <img src="${roleArt(roleId)}" alt="" loading="lazy" width="384" height="512">
-          <div><strong>${r.name}</strong><small>${r.side==='good'?'好人':'邪恶'}</small></div>
-          <p>${avatarImage(p.avatar,28)} ${esc(p.name)}</p>
-        </article>`;
-      }).join('')}
-    </div></section>${history()}`;
-  if(historyOpen)$('history').open=true;
+  const reason={'five-rejections':'五次组队连续未通过。','three-fails':'三次任务失败。',
+    'merlin-assassinated':`${name(g.assassinated)} 是梅林。`,'merlin-survived':`梅林未被识破。`}[g.reason]||'';
+  $('app').innerHTML=roomTop()+`<section class="result-layout">
+    <div class="end-hero ${g.winner}"><h2>${g.winner==='good'?'好人守住了卡美洛':'邪恶笼罩了卡美洛'}</h2><p>${esc(reason)}</p></div>
+    ${tableMarkup(true)}
+    <div class="result-dock">${isHost()?'<button id="rematch" class="primary">回大厅，再来一局</button>':'<span class="muted">等待房主发起下一局</span>'}
+      <button id="public-history">本局记录</button><button id="player-records">游戏档案</button></div>
+  </section>`;
+}
+
+function viewPlayer(id){
+  const player=view?.players.find(p=>p.id===id);
+  if(!player)return;
+  const g=view.game;
+  const own=player.id===view.me;
+  const clue=g?.phase!=='finished'&&g?.confirmed.includes(view.me)?g.intel.find(item=>item.id===id):null;
+  const publicRole=g?.phase==='finished'?ROLES[g.roles[id]]:null;
+  const counts=g?.proposals.filter(item=>item.team.includes(id)).length;
+  const ownEditable=own&&(!g||g.phase==='finished')&&transport.kind!=='practice';
+  dialog(player.name,`<div class="player-card-detail">
+    ${publicRole?`<img class="player-end-portrait" src="${roleArt(g.roles[id])}" alt="" width="384" height="512">`:avatarImage(player.avatar,76)}
+    <p>${publicRole?publicRole.name:player.online?'已连接':'离线'}</p>
+    ${clue?`<p id="private-player-clue" class="intel">你的线索 · ${esc(clue.label)}</p>`:''}
+    ${counts!==undefined?`<p>被选入队伍 ${counts} 次。</p>`:''}</div>`,'player-dialog',
+    `${ownEditable?'<button id="profile" class="primary">修改资料</button>':''}${isHost()&&!g&&!own&&transport.kind!=='practice'?`<button ${player.bot?'data-remove-bot':'data-kick'}="${player.id}" class="danger">${player.bot?'移除人机':'移出房间'}</button>`:''}`);
+}
+
+function showPublicHistory(){
+  const html=history().replace('<details class="history" id="history">','<details class="history" open>');
+  dialog('本局公开记录',html,'wide-dialog');
 }
 
 function render(){
+  if(cleanupDrag?.())toast('席位状态刚刚更新，请重新拖动。');
+  cleanupDrag=null;
   const root=$('app'),active=document.activeElement;
   const restore=root.contains(active)&&active.id?active.id:null;
   const activeSeat=root.contains(active)&&active.dataset.seat;
   const cursor=restore&&active instanceof HTMLInputElement?[active.selectionStart,active.selectionEnd]:null;
+  const scrolls=Array.from(root.querySelectorAll('[data-scroll]'),node=>[node.dataset.scroll,node.scrollTop]);
   const phase=showHome||!view||view.closed?'home':view.game?.phase??'lobby';
   const screen=showHome||!view?'home':view.closed?'closed':phase==='lobby'||phase==='finished'?phase:'game';
   const changed=root.dataset.screen!==screen;
   root.dataset.screen=screen;
-  setAudioScene(phase);
+  document.body.dataset.view=screen;
+  $('identity-header').hidden=screen!=='game'||phase==='reveal';
+  $('account-menu').hidden=screen==='game';
+  stages.sound(phase,view?.game?.winner);
   if(showHome||!view)renderHome();
   else if(view.closed)root.innerHTML='<section class="panel end-panel"><h1>房间已关闭</h1><p>你可以回首页再开一桌。</p><button id="go-home" class="primary">回到首页</button></section>';
   else if(view.game)renderGame();
   else renderLobby();
+  for(const [key,top] of scrolls){
+    const node=root.querySelector(`[data-scroll="${key}"]`);
+    if(node)node.scrollTop=top;
+  }
+  renderModalRound();
   if(changed)(root.querySelector('.end-hero')??root.firstElementChild)?.classList.add('entering');
   const focus=restore?$(restore):activeSeat?root.querySelector(`[data-seat="${CSS.escape(activeSeat)}"]`):null;
   if(root.contains(focus)&&!focus.disabled){
@@ -459,13 +562,29 @@ function render(){
   }
 }
 
-function guide(section='rules'){
+function renderModalRound(){
+  const dock=$('modal-round'),game=view?.game;
+  const wantsVote=Boolean($('modal').open&&handbook&&game?.phase==='vote'&&game.myVote===null);
+  dock.hidden=!wantsVote;
+  if(!wantsVote){dock.replaceChildren();return;}
+  if(!dock.querySelector('span')){
+    dock.innerHTML='<span role="status"></span><button id="guide-vote-yes" class="primary">赞成</button><button id="guide-vote-no">反对</button>';
+  }
+  dock.querySelector('span').textContent=`队伍表决 · ${game.voted.length}/${view.players.length} 已提交`;
+  for(const button of dock.querySelectorAll('button'))button.disabled=busy||showHome;
+}
+
+function guide(section='rules',role=null){
+  if(section instanceof Event)section='rules';
+  preloadCue('paper');
   dialog('圆桌手册',handbookMarkup({players:view?.players.length,settings:view?.settings,section}),'wide-dialog handbook-dialog');
-  mountHandbook($('handbook'));
+  handbook=mountHandbook($('handbook'),{onTurn:()=>playCue('paper')});
+  if(role)handbook.openRole(role);
+  renderModalRound();
 }
 function peekRole(){if(!view?.game)return;const g=view.game,r=ROLES[g.myRole],confirmed=g.confirmed.includes(view.me);let hasPeeked=false,timer;
-  dialog('我的秘密身份',`<div id="private-wrapper"><p class="private-reminder">按住卡牌查看，松开立即遮住；键盘可按住空格或回车。</p><button class="role-cover" id="hold-role" aria-label="按住查看我的身份"><span class="cover-mark" aria-hidden="true"></span><span class="cover-text">按住查看身份</span><img src="${roleArt(g.myRole)}" alt="我的角色立绘" width="384" height="512"></button><div id="private-role-details" class="private-role"><h3 class="role-name">${r.name} <span class="badge ${r.side}">${r.side==='good'?'好人':'邪恶'}</span></h3><p class="role-desc">${r.description}</p>${g.intel.length?`<div class="intel"><strong>你掌握的信息</strong><br>${g.intel.map(p=>`${esc(name(p.id))} · ${p.label}`).join('<br>')}</div>`:'<p class="muted">你没有额外的开局身份信息。</p>'}</div></div>${g.phase==='reveal'&&!confirmed?'<button id="confirm-role" class="primary full" disabled>我已看清身份，确认入局</button>':'<p class="private-reminder">关闭弹窗不会推进对局阶段。</p>'}`);
-  const hold=$('hold-role'),wrapper=$('private-wrapper');const reveal=()=>{timer=setTimeout(()=>{wrapper.classList.add('is-peeking');playCue('reveal');hasPeeked=true;if($('confirm-role'))$('confirm-role').disabled=false;},220);};const hide=()=>{clearTimeout(timer);wrapper.classList.remove('is-peeking');};
+  dialog('我的秘密身份',`<div id="private-wrapper"><p class="private-reminder">按住卡牌查看，松开立即遮住；键盘可按住空格或回车。</p><button class="role-cover" id="hold-role" aria-label="按住查看我的身份"><span class="cover-mark" aria-hidden="true"></span><span class="cover-text">按住查看身份</span><img src="${roleArt(g.myRole)}" alt="我的角色立绘" width="384" height="512"></button><div id="private-role-details" class="private-role"><h3 class="role-name">${r.name} <span class="badge ${r.side}">${r.side==='good'?'好人':'邪恶'}</span></h3><p class="role-desc">${r.description}</p>${g.intel.length?`<div class="intel"><strong>你掌握的信息</strong><br>${g.intel.map(p=>`${esc(name(p.id))} · ${p.label}`).join('<br>')}</div>`:'<p class="muted">你没有额外的开局身份信息。</p>'}</div></div>`,'private-dialog',g.phase==='reveal'&&!confirmed?'<button id="confirm-role" class="primary full" disabled>确认身份</button>':'');
+  const hold=$('hold-role'),wrapper=$('private-wrapper');hold.focus({preventScroll:true});const reveal=()=>{timer=setTimeout(()=>{wrapper.classList.add('is-peeking');playCue('reveal',{private:true});hasPeeked=true;if($('confirm-role'))$('confirm-role').disabled=false;},220);};const hide=()=>{clearTimeout(timer);wrapper.classList.remove('is-peeking');};
   hold.addEventListener('pointerdown',e=>{e.preventDefault();hold.setPointerCapture(e.pointerId);reveal();});for(const ev of ['pointerup','pointercancel','lostpointercapture','blur'])hold.addEventListener(ev,hide);
   hold.addEventListener('keydown',e=>{if([' ','Enter'].includes(e.key)&&!e.repeat){e.preventDefault();reveal();}});hold.addEventListener('keyup',hide);hold.addEventListener('contextmenu',e=>e.preventDefault());
   $('confirm-role')?.addEventListener('click',()=>{if(!hasPeeked)return;closeDialog();run(()=>command('confirmRole'));});
@@ -510,7 +629,12 @@ function joinOffline(p){
     if(transport!==guest)return;
     if(next)showHome=false;
     accept(next);
-  },(message,state)=>{if(transport===guest)status(message,state);});
+  },(message,state)=>{
+    if(transport!==guest)return;
+    status(message,state);
+    const note=$('pair-status');
+    if(note)note.textContent=message;
+  });
   transport=guest;
   status('等待离线配对','terminal');
   void scanInto(async(text,current)=>{
@@ -519,24 +643,76 @@ function joinOffline(p){
     catch(error){guest.close();throw error;}
     if(transport!==guest||!current()){guest.close();return;}
     if(previous?.closed)view=null;
-    dialog('请让房主扫描回答码',`<p class="pair-step">第二步 · 房主扫描玩家回答</p><p class="muted">房主点击“扫描玩家回答码”，扫描下方二维码，连接成功后会自动进入牌桌。</p><canvas id="answer-qr" class="pair-qr" aria-label="离线玩家回答二维码"></canvas><details><summary>回答文本</summary><textarea id="answer-result" class="pair-text" readonly>${esc(answer)}</textarea></details><p class="qr-note">若断线或刷新，重新扫码会尝试恢复本浏览器的原座位。</p>`);
+    dialog('请让房主扫描回答码',`<p class="pair-step">第二步 · 房主扫描玩家回答</p><p class="muted">房主点击“扫描玩家回答码”，扫描下方二维码，连接成功后会自动进入牌桌。</p><canvas id="answer-qr" class="pair-qr" aria-label="离线玩家回答二维码"></canvas><details><summary>回答文本</summary><textarea id="answer-result" class="pair-text" readonly>${esc(answer)}</textarea></details><p id="pair-status" class="qr-note" role="status">等待房主扫描。重新扫码会尝试恢复本浏览器的原座位。</p>`,
+      '','<button id="retry-offline-pair">重新扫码</button>');
     await drawQR($('answer-qr'),answer);
   });
 }
 async function prepareOffline(){if(!('serviceWorker'in navigator)||!window.isSecureContext)throw new Error('请通过 HTTPS 或本机 localhost 打开游戏。');const registration=await navigator.serviceWorker.register('/sw.js');await navigator.serviceWorker.ready;const worker=registration.active||registration.waiting;if(!worker)throw new Error('离线组件正在准备，请稍后重试。');await new Promise((resolve,reject)=>{const channel=new MessageChannel(),timeout=setTimeout(()=>reject(new Error('下载时间较长，请保持联网后重试。')),180000);channel.port1.onmessage=e=>{if(e.data.type==='progress')toast(`离线素材准备中：${e.data.done}/${e.data.total}`);if(e.data.type==='done'){clearTimeout(timeout);resolve();}if(e.data.type==='error'){clearTimeout(timeout);reject(new Error('部分素材未下载完成，请联网后重试。'));}};worker.postMessage({type:'PREPARE_OFFLINE'},[channel.port2]);});toast('离线素材已准备好。断网后可再次打开本站或主屏幕入口。');}
-function confirmAction(title,text,fn){dialog(title,`<p>${esc(text)}</p><div class="actions-row"><button id="confirm-action" class="danger">确认</button><button id="cancel-action">取消</button></div>`);$('confirm-action').onclick=()=>{closeDialog();run(fn);};$('cancel-action').onclick=closeDialog;}
+function confirmAction(title,text,fn){
+  dialog(title,`<p>${esc(text)}</p>`,'confirm-dialog','<button id="cancel-action">取消</button><button id="confirm-action" class="danger">确认</button>');
+  $('confirm-action').onclick=()=>{closeDialog();void run(fn);};
+}
+
 function profileDialog(){
-  if(view?.game&&view.game.phase!=='finished'){toast('本局资料已固定，结算后可以修改。');return;}
-  dialog('我的圆桌资料',`${profileForm()}<button id="save-profile" class="primary full">保存资料</button>`);
+  if(view?.game&&view.game.phase!=='finished'){toast('结算后可以修改本局资料。');return;}
+  const used=view?.players.filter(p=>p.id!==view.me).map(p=>avatarId(p.avatar))||[];
+  dialog('我的圆桌资料',profileForm(person,used,!accountAccess?.signedIn),'setup-dialog','<button id="save-profile" class="primary">保存资料</button>');
   $('save-profile').onclick=()=>{
     try{
       const p=readProfile(),useAccount=$('nickname').dataset.useAccount;
       closeDialog();
-      run(()=>useAccount&&transport===online?online.profile({useAccount:true}):command('profile',p));
+      void run(()=>useAccount&&transport===online?online.profile({useAccount:true}):command('profile',p));
     }catch(error){toast(error.message);}
   };
 }
-function hostMenu(){dialog('房主管理',`<p class="muted">返回大厅会中止当前对局，已经完成的历史战绩保留。关闭房间后，所有人需要重新加入新房。</p>${view.game?'<button id="reset-room" class="full">结束本局，返回大厅</button><div class="spacer"></div>':''}<button id="close-room" class="danger full">关闭整个房间</button><div class="spacer"></div>${transport.kind==='online'?'<button id="leave-host" class="full">离开房间</button>':'<p class="qr-note">离线牌桌由本机主持，房主散场请关闭整个房间。</p>'}`);$('reset-room')?.addEventListener('click',()=>confirmAction('结束当前对局？','所有玩家回到大厅，未完成对局标记中止，不计胜负。',()=>command('reset')));$('close-room').onclick=()=>confirmAction('关闭整个房间？','这会让所有玩家散场，不能继续本局。',()=>command('close'));if($('leave-host'))$('leave-host').onclick=()=>run(async()=>{await command('leave');closeDialog();showHome=true;render();});}
+
+function exitRoom(){
+  if(!view||view.closed)return;
+  if(transport.kind==='practice'){
+    confirmAction('结束练习？','当前练习将结束。',()=>{
+      transport.close();view=null;publishDisplay(null);showHome=true;render();status('本机练习结束','local');
+    });
+    return;
+  }
+  if(isHost())confirmAction('关闭房间？','所有玩家将离席，进行中的一局记为中止。',()=>command('close'));
+  else if(view.game&&view.game.phase!=='finished'){toast('本局尚未结束，可以回首页保留席位。');}
+  else confirmAction('离开房间？','你将离开当前牌桌。',()=>command('leave'));
+}
+
+function hostMenu(){
+  const host=isHost();
+  const local=transport.kind==='practice';
+  dialog(host?'房间管理':'牌桌菜单',`<div class="stack-actions" id="room-menu-content">
+    ${(!view.game||view.game.phase==='finished')&&!local?'<button id="profile">我的资料</button>':''}
+    ${!view.game&&!local?'<button id="room-settings-menu">本局角色</button>':''}
+    <button id="player-records">游戏档案</button>
+    ${host&&transport===online&&!view.game?`<button id="add-bot"${disabled(view.players.length>=10)}>添加 1 个人机</button><button id="fill-bots"${disabled(view.players.length>=5)}>补到 5 人</button>`:''}
+    ${local?`<button id="practice-pause">${transport.paused?'继续人机':'暂停人机'}</button><button id="practice-step"${disabled(!transport.paused||!transport.canStep)}>人机单步</button>`:''}
+    ${host&&view.game?'<button id="reset-room">结束本局，回大厅</button>':''}
+    <button id="leave-room" class="danger">${host&&!local?'关闭房间':'离开房间'}</button></div>`);
+  $('reset-room')?.addEventListener('click',()=>confirmAction('结束当前对局？','未完成的一局记为中止。',()=>command('reset')));
+}
+
+function practiceSetup(){
+  if(view&&!view.closed){toast('请先离开当前牌桌。');return;}
+  dialog('本机人机练习',`<div class="field"><label for="practice-count">席位数</label><select id="practice-count">
+    ${Object.keys(SIZES).map(n=>`<option value="${n}">${n} 人</option>`).join('')}</select></div>
+    <div class="field"><label for="practice-role">你的角色</label><select id="practice-role"><option value="">随机</option>
+    ${Object.entries(ROLES).map(([id,r])=>`<option value="${id}">${r.name}</option>`).join('')}</select></div><p class="muted">练习使用阿瓦隆规则，记录仅在当前页。</p>`,'setup-dialog',
+    '<button id="enter-practice" class="primary">进入练习</button>');
+}
+
+function startPractice(){
+  const count=Number($('practice-count').value),role=$('practice-role').value||null;
+  const p={id:offlinePerson.id,name:person.name,avatar:person.avatar};
+  detachTransport(true);
+  closeDialog();
+  showHome=false;
+  let instance;
+  instance=new Practice(p,next=>{if(transport===instance)accept(next);},status,{count,role});
+  transport=instance;
+}
 
 function selectAvatar(picker,value){
   const chosen=avatarId(value);
@@ -569,37 +745,167 @@ function hostOffline(p,saved){
   accept(first??host.view);
 }
 
-async function enterOnline(create){
-  if(view&&!view.closed){toast('请先离开当前牌桌。');return;}
-  if(busy||connecting)return;
+function roomCode(value){
+  let code=value.trim();
+  if(/^https?:/i.test(code)){
+    try{code=new URL(code).searchParams.get('room')||'';}catch{code='';}
+  }
+  return /^[A-F0-9]{10}$/i.test(code)?code.toUpperCase():null;
+}
+
+const inviteErrors={missing:'这个邀请已失效。',closed:'这个房间已关闭。',running:'这个房间已经开局。',full:'这个房间已坐满。'};
+
+function showOwnRoom(){
+  if($('online-setup')?.invitePreview?.code===inviteCode||view?.code===inviteCode)inviteDismissed=true;
+  closeDialog();
+  showHome=!view||view.closed;
+  render();
+}
+
+function setupOnline(mode,{code='',preview=null,draft=null,focusCode=false}={}){
+  if(mode==='create'&&view&&!view.closed){toast('请先离开或继续当前牌桌。');return;}
+  const join=mode==='join',current=preview?.current;
+  const switching=current&&current.code!==code;
+  const used=preview?.usedAvatars||[];
+  const starting=draft||newGuestProfile();
+  const requested=used.includes(avatarId(starting.avatar))?{...starting,avatar:randomProfile(starting,used).avatar}:starting;
+  const notice=switching?(current.host?
+    `加入后将关闭你主持的 ${current.code} 房间${current.playing?'，进行中的一局将记为中止':''}。`:
+    `加入前将先离开 ${current.code} 房间。`):'';
+  dialog(join?'加入房间':'创建房间',
+    `<form id="online-setup" data-mode="${mode}">
+      ${join?`<div class="field"><label for="join-code">房间码或邀请链接</label><input id="join-code" value="${esc(code)}" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="180"></div>`:''}
+      ${notice?`<p class="notice">${esc(notice)}</p>`:''}
+      ${profileForm(requested,used,!accountAccess?.signedIn)}
+    </form>`,'setup-dialog',
+    `${switching?'<button id="return-own-table">回原牌桌</button>':''}<button id="submit-online" type="submit" form="online-setup" class="primary">${switching?'确认切换':join?'加入房间':'创建房间'}</button>`);
+  const form=$('online-setup');
+  form.invitePreview=preview;
+  if(join){
+    const avatarAvailability=entries=>{
+      const picker=form.querySelector('.game-avatar-picker');
+      const selected=picker.querySelector('.active')?.dataset.avatar;
+      if(entries.includes(selected)){
+        selectAvatar(picker,randomProfile({avatar:selected},entries).avatar);
+        delete $('nickname').dataset.useAccount;
+      }
+      applyAvatarAvailability(picker,entries);
+    };
+    $('join-code').addEventListener('change',()=>{
+      const next=roomCode($('join-code').value);
+      if(!next){avatarAvailability([]);return;}
+      if(next===form.invitePreview?.code){avatarAvailability(form.invitePreview.usedAvatars);return;}
+      avatarAvailability([]);
+      void online.previewInvite(next).then(p=>{
+        if(!form.isConnected||roomCode($('join-code').value)!==next)return;
+        if(p.status==='open')avatarAvailability(p.usedAvatars);
+      }).catch(()=>{});
+    });
+    if(focusCode)$('join-code').focus();
+  }
+}
+
+async function openInviteFromLink(code){
+  const generation=online.generation;
+  if(!roomCode(code)){toast('邀请链接格式不正确。');return;}
+  try{
+    const preview=await online.previewInvite(code);
+    if(!stillOnline(generation))return;
+    if(preview.status==='current'){showOwnRoom();return;}
+    if(preview.status==='open'){
+      if(preview.current&&!preview.canSwitch){toast('你正在对局，结束后可加入其他房间。');return;}
+      setupOnline('join',{code,preview});
+    }else toast(inviteErrors[preview.status]||'当前邀请无法使用。');
+  }catch(error){if(stillOnline(generation))toast(error.message);}
+}
+
+function applyAvatarAvailability(picker,used){
+  picker.querySelectorAll('.avatar-choice').forEach(button=>{
+    const option=CATALOGUE.find(avatar=>avatar.id===button.dataset.avatar);
+    const locked=used.includes(button.dataset.avatar)&&!button.classList.contains('active');
+    button.disabled=locked;
+    button.querySelector('span').textContent=option.name+(locked?' · 已使用':'');
+    button.setAttribute('aria-label',option.name+(locked?'，已使用':''));
+  });
+}
+
+async function enterOnline(form){
+  if(busy||!form.isConnected)return;
+  const create=form.dataset.mode==='create';
   const p=readProfile();
   const useAccount=$('nickname').dataset.useAccount;
-  let code=$('join-code').value.trim();
-  if(!create){
-    if(/^https?:/i.test(code)){try{code=new URL(code).searchParams.get('room')||'';}catch{code='';}}
-    code=code.toUpperCase();
-    if(!/^[A-F0-9]{10}$/.test(code)){toast('请输入完整的房间码或邀请链接。');$('join-code').focus();return;}
-  }
+  const code=create?null:roomCode($('join-code').value);
+  if(!create&&!code){toast('请输入完整的房间码或邀请链接。');$('join-code').focus();return;}
+  const submit=$('submit-online');
+  submit.disabled=true;
   await run(async()=>{
-    if(transport!==online){detachTransport();transport=online;}
+    if(transport!==online){
+      if(view&&!view.closed)throw new Error('请先离开当前本机牌桌。');
+      detachTransport();transport=online;
+    }
     const generation=online.generation;
     if(!online.person){
       const resumed=await online.boot();
       if(!stillOnline(generation))return;
       savePerson(resumed.person);
-      if(resumed.room){showHome=false;return;}
     }
-    if(useAccount||p.name!==online.person.name||p.avatar!==online.person.avatar){
+    if(!stillOnline(generation)||!form.isConnected)return;
+    let from;
+    if(!create){
+      const preview=await online.previewInvite(code);
+      if(!form.isConnected||!stillOnline(generation))return;
+      if(preview.status==='current'){showOwnRoom();return;}
+      if(preview.status!=='open')throw new Error(inviteErrors[preview.status]||'当前房间无法加入。');
+      if(preview.current){
+        if(!preview.canSwitch)throw new Error('请完成当前对局后再加入其他房间。');
+        const confirmed=form.invitePreview?.current;
+        if(form.invitePreview?.code!==code||confirmed?.version!==preview.current.version||confirmed?.code!==preview.current.code){
+          setupOnline('join',{code,preview,draft:p});
+          return;
+        }
+        from={code:preview.current.code,version:preview.current.version};
+      }
+    }else if(view&&!view.closed){throw new Error('请先离开或继续当前牌桌。');}
+    if(!from&&(useAccount||p.name!==online.person.name||p.avatar!==online.person.avatar)){
       await online.profile(useAccount?{useAccount:true}:p);
     }
-    if(!stillOnline(generation))return;
+    if(!stillOnline(generation)||!form.isConnected)return;
     savePerson(online.person);
-    const room=await (create?online.create(DEFAULT_SETTINGS):online.join(code));
+    const room=await (create?online.create(DEFAULT_SETTINGS):online.join(code,from?{from,profile:useAccount?{useAccount:true}:p}:undefined));
     if(!stillOnline(generation)||!room)return;
+    if(inviteCode===code)inviteDismissed=true;
+    closeDialog();
     showHome=false;
-    homeEdited=false;
-    window.scrollTo(0,0);
   });
+  if(submit.isConnected)submit.disabled=false;
+}
+
+function shuffleProfile(){
+  const field=$('nickname');
+  const picker=$('modal-body').querySelector('.game-avatar-picker');
+  const used=Array.from(picker.querySelectorAll('.avatar-choice:disabled'),node=>node.dataset.avatar);
+  const chosen=randomProfile({name:field.value,avatar:picker.querySelector('.active')?.dataset.avatar},used);
+  field.value=chosen.name;
+  delete field.dataset.useAccount;
+  selectAvatar(picker,chosen.avatar);
+  applyAvatarAvailability(picker,used);
+  playCue('pick');
+}
+
+function setupOffline(mode){
+  if(view&&!view.closed){toast('请先离开当前牌桌。');return;}
+  const local=offlinePerson.name==='圆桌旅人'?{...offlinePerson,...randomProfile(offlinePerson)}:offlinePerson;
+  dialog(mode==='create'?'创建离线房间':'扫描离线邀请',
+    profileForm(local,[],true),'setup-dialog',
+    `<button id="submit-offline" type="button" class="primary" data-offline-mode="${mode}">${mode==='create'?'创建离线房间':'打开扫码'}</button>`);
+}
+
+function submitOffline(mode){
+  const p={id:offlinePerson.id,...readProfile()};
+  if(mode==='join'){joinOffline(p);return;}
+  closeDialog();
+  if(OfflineHost.saved())confirmAction('替换本机离线牌桌？','已完成的离线战绩会保留。',()=>hostOffline(p));
+  else run(()=>hostOffline(p));
 }
 
 function useAccountProfile(){
@@ -608,9 +914,15 @@ function useAccountProfile(){
   const container=$('modal').open?$('modal-body'):$('app');
   const field=container.querySelector('#nickname');
   field.value=profile.name;
+  const picker=container.querySelector('.game-avatar-picker');
+  const target=Array.from(picker.querySelectorAll('[data-avatar]')).find(button=>button.dataset.avatar===avatarId(profile.avatar));
+  if(target?.disabled){
+    delete field.dataset.useAccount;
+    toast('账号头像已被使用，已填入账号昵称。');
+    return;
+  }
   field.dataset.useAccount='true';
-  selectAvatar(container.querySelector('.game-avatar-picker'),profile.avatar);
-  if(container===$('app'))homeEdited=true;
+  selectAvatar(picker,profile.avatar);
   toast('已填入账号昵称和头像。');
 }
 
@@ -640,23 +952,27 @@ function claimGuest(){
   });
 }
 
-$('app').addEventListener('change',e=>{
+document.addEventListener('change',e=>{
   const key=e.target.dataset.setting;
-  if(!key)return;
+  if(!key||!view||view.game||!isHost())return;
   settingsDraft||={...view.settings};
   settingsDraft[key]=e.target.checked;
   if(Object.keys(SETTING_LABEL).every(setting=>settingsDraft[setting]===view.settings[setting]))settingsDraft=null;
+  const limit=$('modal-body').querySelector('[data-role-limit]');
+  if(limit){
+    const total=1+['morgana','mordred','oberon'].filter(role=>(settingsDraft||view.settings)[role]).length;
+    limit.textContent=EVIL[view.players.length]&&total>EVIL[view.players.length]?`本桌 ${EVIL[view.players.length]} 个邪恶席位，当前选择了 ${total} 个特殊邪恶角色。`:'梅林和刺客固定入场。';
+  }
   render();
 });
 document.addEventListener('input',e=>{
   if(e.target.id!=='nickname')return;
   delete e.target.dataset.useAccount;
-  if($('app').contains(e.target))homeEdited=true;
 });
-$('app').addEventListener('submit',e=>{
-  if(e.target.id!=='join-form')return;
+document.addEventListener('submit',e=>{
+  if(e.target.id!=='online-setup')return;
   e.preventDefault();
-  void enterOnline(false).catch(error=>toast(error.message));
+  void enterOnline(e.target).catch(error=>toast(error.message));
 });
 
 $('modal').addEventListener('input',e=>{
@@ -673,16 +989,20 @@ document.addEventListener('click',e=>{
     const avatar=e.target.closest('[data-avatar]');
     if(avatar){
       const picker=avatar.closest('.game-avatar-picker');
-      if($('app').contains(avatar))homeEdited=true;
       const field=($('modal').open?$('modal-body'):$('app')).querySelector('#nickname');
       if(field)delete field.dataset.useAccount;
       selectAvatar(picker,avatar.dataset.avatar);
       playCue('pick');
       return;
     }
+    const demo=e.target.closest('[data-scene-demo]')?.dataset.sceneDemo;
+    if(demo){if(!stages.preview(demo))toast('当前演出仍在播放。');return;}
+    const selectedPlayer=e.target.closest('[data-player-info]')?.dataset.playerInfo;
+    if(selectedPlayer){viewPlayer(selectedPlayer);return;}
     const seat=e.target.closest('[data-seat]');
     if(seat&&!seat.disabled){
       const g=view.game,id=seat.dataset.seat;
+      if(!canPick(g,id)){viewPlayer(id);return;}
       if(selection.has(id))selection.delete(id);
       else if(g.phase==='nominate'){
         if(selection.size>=g.needed){toast(`本轮只需要 ${g.needed} 人。`);return;}
@@ -694,56 +1014,72 @@ document.addEventListener('click',e=>{
     }
     const kick=e.target.closest('[data-kick]')?.dataset.kick;
     if(kick){confirmAction('移出这位玩家？',`${name(kick)} 将离开大厅，仍可通过邀请重新加入。`,()=>command('kick',{playerId:kick}));return;}
+    const removeBot=e.target.closest('[data-remove-bot]')?.dataset.removeBot;
+    if(removeBot){closeDialog();run(()=>command('removeBot',{playerId:removeBot}));return;}
     const id=e.target.closest('button,a')?.id;
     if(!id)return;
     switch(id){
       case 'player-records': case 'home-records': openRecords();return;
       case 'offline-records': case 'home-offline-records': showOfflineRecords();return;
       case 'account-menu': case 'account-details': accountMenu();return;
-      case 'audio-settings': soundSettings();return;
+      case 'audio-settings': case 'preview-audio': soundSettings();return;
       case 'preview-sound': playCue('success');return;
       case 'retry-online': if(!online.resume())void syncOnline();return;
       case 'use-account-profile': useAccountProfile();return;
+      case 'shuffle-profile': shuffleProfile();return;
       case 'preview-guest': previewGuest();return;
       case 'cancel-claim': guestPreview=null;closeDialog();return;
       case 'claim-guest': claimGuest();return;
-      case 'guide': case 'guide-game': guide();return;
-      case 'guide-room': case 'home-handbook': guide('roles');return;
+      case 'guide': case 'guide-home': case 'guide-game': case 'guide-game-desktop': guide();return;
+      case 'guide-room': case 'guide-room-desktop': case 'home-handbook': guide('roles');return;
       case 'home-quests': guide('quests');return;
-      case 'modal-close': case 'cancel-action': closeDialog();return;
-      case 'peek-role': case 'peek-role-sidebar': case 'peek-role-mobile': peekRole();return;
+      case 'modal-close': case 'cancel-action':
+        if($('online-setup')?.invitePreview?.code===inviteCode)inviteDismissed=true;
+        closeDialog();return;
+      case 'peek-role': case 'identity-header': peekRole();return;
       case 'invite': invite();return;
       case 'profile': profileDialog();return;
       case 'room-menu': hostMenu();return;
-      case 'go-home': case 'brand-home': e.preventDefault();closeDialog();dismissScene();showHome=true;render();window.scrollTo(0,0);return;
-      case 'resume-current': showHome=false;render();window.scrollTo(0,0);return;
-      case 'create-online': void enterOnline(true).catch(error=>toast(error.message));return;
+      case 'room-settings-menu': case 'lobby-mobile-settings': showRoomSettings();return;
+      case 'go-home': case 'brand-home': e.preventDefault();closeDialog();dismissScene();showHome=true;render();return;
+      case 'resume-current': case 'return-own-table': showOwnRoom();return;
+      case 'create-online': setupOnline('create');return;
+      case 'join-online': setupOnline('join',{code:inviteCode,focusCode:true});return;
+      case 'public-history': showPublicHistory();return;
+      case 'public-screen': openPublicDisplay(view);return;
+      case 'offline-menu': offlineMenu();return;
+      case 'practice-menu': practiceSetup();return;
+      case 'enter-practice': startPractice();return;
+      case 'practice-pause': transport.setPaused(!transport.paused);hostMenu();return;
+      case 'practice-step': if(transport.canStep)transport.step();hostMenu();return;
+      case 'add-bot': run(async()=>{await command('addBot');hostMenu();});return;
+      case 'fill-bots': run(async()=>{await command('fillBots');hostMenu();});return;
+      case 'fill-room-bots': run(()=>command('fillBots'));return;
       case 'pair-host': run(pairHost);return;
-      case 'retry-offline': run(()=>joinOffline(person));return;
+      case 'retry-offline': case 'retry-offline-pair': run(()=>joinOffline(person));return;
       case 'prepare-offline': run(prepareOffline);return;
-    }
-    if(['create-offline','join-offline','restore-offline'].includes(id)){
-      if(view&&!view.closed){toast('请先离开当前牌桌。');return;}
-      if(id==='restore-offline'){
+      case 'close-own-room': case 'leave-room': exitRoom();return;
+      case 'create-offline': setupOffline('create');return;
+      case 'join-offline': setupOffline('join');return;
+      case 'submit-offline': submitOffline($('submit-offline').dataset.offlineMode);return;
+      case 'restore-offline':
+        if(view&&!view.closed){toast('请先离开当前牌桌。');return;}
+        closeDialog();
         run(()=>{const saved=OfflineHost.saved();if(!saved)throw new Error('原离线牌桌已过期。');hostOffline(saved.person,saved);});
-      }else{
-        const p={id:offlinePerson.id,...readProfile()};
-        if(id==='join-offline')run(()=>joinOffline(p));
-        else if(OfflineHost.saved())confirmAction('创建新的离线牌桌？','新建会替换本机保存的离线牌桌，已完成战绩会保留。',()=>hostOffline(p));
-        else run(()=>hostOffline(p));
-      }
-      return;
+        return;
     }
     if(!view||view.closed)return;
-    if(id==='private-intel'){
+    if(id==='private-intel'||id==='private-intel-desktop'){
       dialog('我的查验记录',`<div id="private-intel-dialog" class="intel">${view.game.privateIntel.map(r=>`第 ${r.quest} 轮后：${esc(name(r.playerId))} · <strong>${r.side==='good'?'好人阵营':'邪恶阵营'}</strong>`).join('<br>')}</div><p class="private-reminder">这些结果只在你的设备显示。</p>`);
       return;
     }
     const commands={
       ready:()=>command('ready',{ready:!me().ready}),start:()=>command('start'),
-      'save-settings':async()=>{await command('settings',{settings:settingsDraft||view.settings});settingsDraft=null;},
+      'save-settings':async()=>{if(settingsDraft){await command('settings',{settings:settingsDraft});settingsDraft=null;}closeDialog();},
+      'save-settings-inline':async()=>{if(settingsDraft){await command('settings',{settings:settingsDraft});settingsDraft=null;}},
       nominate:()=>command('nominate',{players:[...selection]}),
       'vote-yes':()=>command('vote',{approve:true}),'vote-no':()=>command('vote',{approve:false}),
+      'guide-vote-yes':()=>command('vote',{approve:true}),'guide-vote-no':()=>command('vote',{approve:false}),
       'quest-success':()=>command('quest',{success:true}),'quest-fail':()=>command('quest',{success:false}),
       continue:()=>command('continue'),inspect:()=>command('inspect',{playerId:[...selection][0]}),
       rematch:()=>command('reset'),
@@ -751,23 +1087,43 @@ document.addEventListener('click',e=>{
     if(id==='assassinate'){
       const [target]=selection;
       confirmAction('确认最终指认？',`你将指认 ${name(target)} 为梅林。确认后立即结算。`,()=>command('assassinate',{playerId:target}));
-    }else if(id==='leave-room'){
-      confirmAction('离开房间？','如果对局尚未结束，请返回首页保留座位。',()=>command('leave'));
     }else if(Object.hasOwn(commands,id))run(commands[id]);
   }catch(error){toast(error.message||'操作未完成，请重试。');}
 });
 
 $('modal').addEventListener('close',()=>{if(!$('modal').open)clearDialog();});
 function clearPrivate(){
-  if($('private-wrapper')||$('private-intel-dialog'))closeDialog();
+  if($('private-wrapper')||$('private-intel-dialog')||$('private-player-clue'))closeDialog();
 }
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden){stopScan?.();stopScan=null;clearPrivate();dismissScene();}
 });
 window.addEventListener('blur',clearPrivate);
-window.addEventListener('pagehide',()=>stopScan?.());
+window.addEventListener('pagehide',()=>{stopScan?.();publishDisplay(null);});
 window.addEventListener('online',()=>{if(transport===online&&!online.resume()&&!view&&networkState==='degraded')void syncOnline();});
 
+function measureViewport(){
+  const viewport=window.visualViewport;
+  const height=Math.floor(viewport?.height??window.innerHeight);
+  document.documentElement.style.setProperty('--visual-height',`${height}px`);
+  document.documentElement.style.setProperty('--visual-top',`${Math.floor(viewport?.offsetTop??0)}px`);
+  document.body.toggleAttribute('data-short-viewport',height<500);
+}
+measureViewport();
+window.addEventListener('resize',measureViewport);
+window.visualViewport?.addEventListener('resize',measureViewport);
+window.visualViewport?.addEventListener('scroll',measureViewport);
 if('serviceWorker'in navigator&&window.isSecureContext)navigator.serviceWorker.register('/sw.js').catch(()=>{});
-void syncOnline();
-render();
+if(displayId&&/^[0-9a-f-]{36}$/.test(displayId)){
+  mountPublicDisplay($('app'),displayId,{
+    sound:(phase,winner)=>stages.sound(phase,winner),
+    settings:soundSettings,
+    animate:(old,next)=>stages.update(old,next,{publicOnly:true,live:Boolean(old)}),
+  });
+}else{
+  for(const path of ['/_fribench/client.js','/_fribench/account-view.js']){
+    const script=document.createElement('script');script.async=false;script.src=path;document.head.append(script);
+  }
+  void syncOnline();
+  render();
+}

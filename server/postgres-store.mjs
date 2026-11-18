@@ -5,6 +5,7 @@ import {applyCommand,createRoom,joinRoom,nickname,GameError,AVATARS} from '../sh
 import {PlayerJournal,journalSchema} from '../shared/fribench-game-kit/journal.mjs';
 import {accountAvatar,playerName} from '../shared/fribench-game-kit/avatars.mjs';
 import {captureTransition,settleGame} from './journal.mjs';
+import {prepareSwitch} from './room-membership.mjs';
 export class PostgresStore {
   constructor(pool,client,now){Object.assign(this,{pool,client,now,sessions:new Map(),rooms:new Map(),receipts:new Map(),claims:new Map(),writes:[],failed:false});this.journal=new PlayerJournal({pg:true,write:(sql,...values)=>this.write(sql,...values),query:async(sql,...values)=>(await client.query(sql,values)).rows,now});}
   static async open(url,{schema='public',now=Date.now}={}){
@@ -40,14 +41,28 @@ export class PostgresStore {
   get(code){const row=this.rooms.get(code);if(!row||row.updated<this.now()-6*3600000)throw new GameError('ROOM_NOT_FOUND','房间不存在或已超过 6 小时未使用。');return JSON.parse(row.state);}
   save(room){this.rooms.set(room.code,{state:JSON.stringify(room),updated:room.updatedAt});this.write('INSERT INTO avalon_rooms VALUES($1,$2::jsonb,$3) ON CONFLICT(code) DO UPDATE SET state=excluded.state,updated=excluded.updated',room.code,JSON.stringify(room),room.updatedAt);}
   membership(id){return[...this.rooms.values()].filter(r=>r.updated>this.now()-6*3600000).map(r=>JSON.parse(r.state)).find(r=>!r.closed&&r.players.some(p=>p.id===id))??null;}
+  activeBotRooms(){return [...this.rooms.values()].filter(row=>row.updated>=this.now()-6*3600000).map(row=>JSON.parse(row.state)).filter(room=>room.game?.botAssisted&&room.game.phase!=='finished');}
   create(person,opts){if(this.membership(person.id))throw new GameError('ALREADY_IN_ROOM','你还有一个房间，请先离开或关闭。');let code;do{code=randomBytes(5).toString('hex').toUpperCase();}while(this.rooms.has(code));const room=createRoom(person,opts,{code,now:this.now()});this.save(room);return room;}
   join(code,person){const old=this.membership(person.id);if(old&&old.code!==code)throw new GameError('ALREADY_IN_ROOM','请先离开原房间。');const room=joinRoom(this.get(code),person,{now:this.now()});this.save(room);return room;}
+  switchRoom(code,person,from,profile){
+    return this.transaction(()=>{
+      const current=this.membership(person.id),now=this.now();
+      const result=prepareSwitch(current,this.get(code),person,from,now,profile);
+      if(result.previousRoom){
+        captureTransition(this,current,result.previousRoom,now);
+        this.save(result.previousRoom);
+        if(profile)result.person=this.profile(person,profile.name,profile.avatar,profile.source);
+        this.save(result.room);
+      }
+      return result;
+    });
+  }
   command(code,person,command,online){
     if(!command||typeof command!=='object'||Array.isArray(command)||Object.keys(command).some(k=>!['id','version','type','payload'].includes(k))||!/^[-a-zA-Z0-9_]{8,80}$/.test(command.id??'')||!Number.isSafeInteger(command.version)||command.version<0||typeof command.type!=='string')throw new GameError('BAD_COMMAND','操作格式不正确。');
     return this.transaction(()=>{const room=this.get(code),key=JSON.stringify([code,person.id,command.id]),fingerprint=hash(JSON.stringify([command.version,command.type,command.payload])),receipt=this.receipts.get(key);
       if(receipt){if(receipt.fingerprint!==fingerprint)throw new GameError('COMMAND_REUSED','操作标识重复，请重新同步。');return{room,replayed:true};}
       if(room.version!==command.version)throw new GameError('STALE_VERSION','牌桌已更新，正在同步，请稍后重试。');
-      const next=applyCommand(room,person.id,command.type,command.payload,{now:this.now(),online});captureTransition(this,room,next,this.now());this.save(next);this.receipts.set(key,{room:code,fingerprint,version:next.version});this.write('INSERT INTO avalon_receipts VALUES($1,$2,$3,$4,$5)',code,person.id,command.id,fingerprint,next.version);if(command.type==='profile')this.profile(person,command.payload.name,command.payload.avatar);return{room:next,replayed:false};});
+      const next=applyCommand(room,person.id,command.type,command.payload,{now:this.now(),online,allowBots:true});captureTransition(this,room,next,this.now());this.save(next);this.receipts.set(key,{room:code,fingerprint,version:next.version});this.write('INSERT INTO avalon_receipts VALUES($1,$2,$3,$4,$5)',code,person.id,command.id,fingerprint,next.version);if(command.type==='profile')this.profile(person,command.payload.name,command.payload.avatar);return{room:next,replayed:false};});
   }
   claimRecord(sub){return this.claims.get(sub);}
   claim(account,guest,room,previewHash){return this.transaction(()=>{

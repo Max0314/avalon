@@ -7,3 +7,5 @@ data
 .env*
 test-results
 .playwright
+art/cinematics/source
+art/source

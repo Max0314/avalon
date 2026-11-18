@@ -5,6 +5,7 @@ import {dirname} from 'node:path';
 import {applyCommand,createRoom,joinRoom,nickname,GameError,AVATARS} from '../shared/engine.mjs';
 import {PlayerJournal,journalSchema} from '../shared/fribench-game-kit/journal.mjs';
 import {captureTransition,settleGame} from './journal.mjs';
+import {prepareSwitch} from './room-membership.mjs';
 
 export const hash=value=>createHash('sha256').update(value).digest('hex');
 export class Store {
@@ -43,6 +44,11 @@ export class Store {
   membership(id) {
     return this.db.prepare('SELECT state FROM rooms WHERE updated>?').all(this.now()-6*3600000).map(r=>JSON.parse(r.state)).find(r=>!r.closed&&r.players.some(p=>p.id===id))||null;
   }
+  activeBotRooms() {
+    return this.db.prepare(`SELECT state FROM rooms WHERE updated>=?
+      AND json_extract(state,'$.game.botAssisted')=1 AND json_extract(state,'$.game.phase')<>'finished'`)
+      .all(this.now()-6*3600000).map(row=>JSON.parse(row.state));
+  }
   create(person,opts) {
     const current=this.membership(person.id);
     if(current)throw new GameError('ALREADY_IN_ROOM','你还有一个房间，请先回到原房间，离开或关闭后再创建。');
@@ -53,6 +59,24 @@ export class Store {
     const current=this.membership(person.id);
     if(current&&current.code!==code)throw new GameError('ALREADY_IN_ROOM','你还在另一个房间，请先离开原房间。');
     const room=joinRoom(this.get(code),person,{now:this.now()});this.save(room);return room;
+  }
+  switchRoom(code,person,from,profile) {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const current=this.membership(person.id),now=this.now();
+      const result=prepareSwitch(current,this.get(code),person,from,now,profile);
+      if(result.previousRoom){
+        captureTransition(this,current,result.previousRoom,now);
+        this.save(result.previousRoom);
+        if(profile)result.person=this.profile(person,profile.name,profile.avatar);
+        this.save(result.room);
+      }
+      this.db.exec('COMMIT');
+      return result;
+    } catch(error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
   command(code,person,command,online) {
     if(!command||typeof command!=='object'||Array.isArray(command)||Object.keys(command).some(k=>!['id','version','type','payload'].includes(k))||!/^[-a-zA-Z0-9_]{8,80}$/.test(command.id||'')||!Number.isSafeInteger(command.version)||command.version<0||typeof command.type!=='string')throw new GameError('BAD_COMMAND','操作格式不正确。');
@@ -66,7 +90,7 @@ export class Store {
         this.db.exec('COMMIT');return {room,replayed:true};
       }
       if(room.version!==command.version)throw new GameError('STALE_VERSION','牌桌已更新，正在同步，请稍后重试。');
-      const next=applyCommand(room,person.id,command.type,command.payload,{now:this.now(),online});
+      const next=applyCommand(room,person.id,command.type,command.payload,{now:this.now(),online,allowBots:true});
       captureTransition(this,room,next,this.now());
       this.save(next);
       this.db.prepare('INSERT INTO receipts VALUES (?,?,?,?,?)').run(code,person.id,command.id,fingerprint,next.version);

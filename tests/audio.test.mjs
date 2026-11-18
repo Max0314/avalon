@@ -41,6 +41,7 @@ test('sound waits for a gesture, respects both channels and discards obsolete tr
   }
   const globals = {
     document:{hidden:false,addEventListener:(name,handler) => listeners.set(name,handler)},
+    location:{search:''},
     localStorage:{getItem:key => saved.get(key),setItem:(key,value) => saved.set(key,value)},
     AudioContext:TestContext,
     fetch:url => {
@@ -79,7 +80,7 @@ test('sound waits for a gesture, respects both channels and discards obsolete tr
     assert.equal(songs[1].buffer,'/audio/hall.mp3');
     assert.equal(songs[0].stopped,3.48);
     assert.deepEqual(JSON.parse(saved.get('avalon.audio.v1')),{
-      track:'hall',music:true,effects:false,musicVolume:62,effectsVolume:55,
+      track:'hall',music:true,effects:false,musicVolume:62,effectsVolume:55,privateEffects:true,
     });
     audio.playCue('reveal');
     assert.equal(oscillators.length,0);
@@ -103,6 +104,23 @@ test('sound waits for a gesture, respects both channels and discards obsolete tr
     assert.equal(songs[2].buffer,'/audio/hall.mp3');
     assert.equal(requested.length,2);
 
+    const preload=audio.preloadCue('wax');
+    assert.equal(requested.at(-1),'/audio/cinematics/wax.mp3');
+    loaded.get('/audio/cinematics/wax.mp3')();
+    await preload;
+    const privateCue=audio.playCue('wax',{private:true});
+    const voice=songs.at(-1);
+    assert.equal(voice.buffer,'/audio/cinematics/wax.mp3');
+    const publicCue=audio.playCue('wax');
+    const publicVoice=songs.at(-1);
+    audio.setAudioSettings({privateEffects:false});
+    assert.equal(voice.stopped,true);
+    assert.equal(publicVoice.stopped,undefined);
+    assert.equal(audio.playCue('wax',{private:true}),undefined);
+    assert.equal(songs.at(-1),publicVoice);
+    privateCue();
+    publicCue();
+
     saved.set('avalon.audio.v1',JSON.stringify({music:false,effects:false}));
     const muted=await import('../web/audio.mjs?starts-muted');
     listeners.get('click')({isTrusted:true});
@@ -111,6 +129,13 @@ test('sound waits for a gesture, respects both channels and discards obsolete tr
     await tick();
     assert.equal(opened,2);
     assert.equal(requested.at(-1),'/audio/hall.mp3');
+
+    const playerPrefs=saved.get('avalon.audio.v1');
+    globals.location.search='?display=cast';
+    const display=await import('../web/audio.mjs?display-prefs');
+    display.setAudioSettings({music:false,effectsVolume:22});
+    assert.equal(JSON.parse(saved.get('avalon.audio.display.v1')).effectsVolume,22);
+    assert.equal(saved.get('avalon.audio.v1'),playerPrefs);
   } finally {
     for (const [name,descriptor] of Object.entries(previous)) {
       if (descriptor) Object.defineProperty(globalThis,name,descriptor);

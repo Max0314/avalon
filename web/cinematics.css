@@ -1,0 +1,318 @@
+dialog.cinematic-dialog {
+  --scene-glow: 236 184 104;
+  position: fixed;
+  inset: var(--visual-top, 0px) 0 auto;
+  width: 100vw;
+  height: var(--visual-height, 100dvh);
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  box-sizing: border-box;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+  border: none;
+  border-radius: 0;
+  color: #f8e9ca;
+  background: #0a0d0b;
+  box-shadow: none;
+  isolation: isolate;
+}
+
+dialog.cinematic-dialog:not([open]) { display: none; }
+dialog.cinematic-dialog:not([data-running]) * { animation-play-state: paused; }
+.cinematic-dialog::backdrop { background-color: #060a08; }
+.cinematic-dialog[data-tone="good"] { --scene-glow: 163 220 179; }
+.cinematic-dialog[data-tone="evil"] { --scene-glow: 223 116 93; }
+
+.cinematic-frame {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: #111a14;
+}
+
+.cinematic-frame::before,
+.cinematic-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.cinematic-frame::before {
+  background: url('/art/round-hall.webp') center 56% / cover no-repeat;
+  opacity: .72;
+}
+
+.cinematic-frame::after {
+  background:
+    linear-gradient(180deg, #080b0a88 0%, transparent 35%, #080b0a73 56%, #080b0af5 100%),
+    radial-gradient(ellipse at 50% 43%, transparent 12%, #080b0ac8 97%);
+}
+
+.cinematic-dialog[data-scene="ending"] .cinematic-frame::before {
+  background-image: url('/art/camelot.webp');
+}
+
+.cinematic-dialog[data-scene="ending"][data-tone="evil"] .cinematic-frame::before {
+  filter: sepia(.35) hue-rotate(-23deg) brightness(.58) contrast(1.15);
+}
+
+.cinematic-light {
+  position: absolute;
+  inset: -12%;
+  z-index: 1;
+  opacity: .38;
+  background: radial-gradient(ellipse at 50% 39%, rgb(var(--scene-glow) / .35), transparent 55%);
+  animation: court-light 2.8s ease-out both;
+}
+
+.cinematic-object {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  top: 42%;
+  width: min(70vw, 58dvh, 29rem);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  perspective: 900px;
+}
+
+.cinematic-prop,
+.cinematic-halo,
+.cinematic-portrait {
+  position: absolute;
+}
+
+.cinematic-prop {
+  inset: 0;
+  background-image: url('/art/cinematics/court-props.webp');
+  background-repeat: no-repeat;
+  background-size: 300% 200%;
+  filter: drop-shadow(0 1.3rem 1.5rem #000a);
+  animation: court-arrive 1.1s cubic-bezier(.19,.75,.25,1) both;
+}
+
+.cinematic-prop[data-prop="letter"] { background-position: 0 0; }
+.cinematic-prop[data-prop="shield"] { background-position: 50% 0; transform: scale(.85); }
+.cinematic-prop[data-prop="bowl"] { background-position: 100% 0; }
+.cinematic-prop[data-prop="gold-crown"] { background-position: 0 100%; }
+.cinematic-prop[data-prop="iron-crown"] { background-position: 50% 100%; }
+.cinematic-prop[data-prop="scroll"] { background-position: 100% 100%; }
+
+.cinematic-halo {
+  inset: 14%;
+  border-radius: 50%;
+  opacity: 0;
+  background:
+    radial-gradient(circle, rgb(var(--scene-glow) / .25), transparent 62%),
+    repeating-radial-gradient(circle, transparent 0 18%, rgb(var(--scene-glow) / .16) 19%, transparent 21%);
+  mask-image: radial-gradient(circle, #000 12%, transparent 66%);
+  animation: court-halo 1.05s .64s ease-out both;
+}
+
+.cinematic-dialog[data-scene="deal"] .cinematic-prop { animation-name: court-seal; }
+.cinematic-dialog[data-scene="receipt"] .cinematic-prop { animation-duration: .36s; }
+.cinematic-dialog[data-scene="receipt"] .cinematic-caption { animation-delay: .18s; }
+.cinematic-dialog[data-scene="ballot"] .cinematic-prop,
+.cinematic-dialog[data-scene="verdict"] .cinematic-prop {
+  transform-origin: 80% 75%;
+  animation-name: court-scroll;
+}
+
+.cinematic-dialog[data-scene="quest"] .cinematic-prop {
+  animation: court-weight 1.35s .46s cubic-bezier(.22,.64,.24,1) both;
+}
+
+.cinematic-dialog[data-scene="quest"] .cinematic-halo { animation-delay: 1s; }
+.cinematic-dialog[data-scene="lake"] .cinematic-halo {
+  inset: 24% 5% 44%;
+  z-index: 1;
+  background: repeating-radial-gradient(ellipse, transparent 0 15%, #9ddfd193 17%, transparent 21%);
+  mask-image: radial-gradient(ellipse, #000 34%, transparent 70%);
+  animation: court-water 1.15s .35s ease-out both;
+}
+
+.cinematic-dialog[data-scene="ending"] .cinematic-halo { animation-delay: .94s; }
+.cinematic-dialog[data-scene="ending"] .cinematic-prop {
+  animation: court-weight 1.4s .28s cubic-bezier(.23,.65,.24,1) both;
+}
+.cinematic-dialog[data-scene="ending"][data-tone="evil"] .cinematic-prop { filter: drop-shadow(0 2rem 1.4rem #000c); }
+.cinematic-dialog[data-scene="oath"] .cinematic-prop { filter: saturate(.64) brightness(.76) drop-shadow(0 1rem 1.5rem #000c); }
+
+.cinematic-dialog[data-scene="identity"] .cinematic-prop { animation: court-unseal .83s both; }
+.cinematic-portrait {
+  inset: 7% 18%;
+  width: 64%;
+  height: 86%;
+  object-fit: cover;
+  object-position: center 30%;
+  border-radius: .24rem;
+  box-shadow: 0 .8rem 2rem #060706d9;
+  animation: court-portrait .77s .35s cubic-bezier(.22,.66,.24,1) both;
+}
+
+.cinematic-cards {
+  position: absolute;
+  inset: 26% 11% 19%;
+  transform: rotate(-5deg);
+}
+
+.cinematic-cards i {
+  position: absolute;
+  top: 6%;
+  width: 32%;
+  height: 75%;
+  border-radius: .35rem;
+  border: 3px double #c9a966d9;
+  background:
+    linear-gradient(35deg, #152720, #2f4736 42%, #1d3528 88%),
+    repeating-linear-gradient(42deg, #c7a15248 0 2px, transparent 2px 12px);
+  box-shadow: 0 .75rem 1.25rem #080a08c9;
+  animation: court-card .71s .15s cubic-bezier(.1,.8,.25,1) both;
+}
+.cinematic-cards i:nth-child(2) { left: 30%; transform: rotate(5deg); animation-delay: .29s; }
+.cinematic-cards i:nth-child(3) { left: 59%; transform: rotate(15deg); animation-delay: .45s; }
+
+.cinematic-caption {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: max(5.5%, env(safe-area-inset-bottom));
+  width: min(calc(100vw - 2rem), 52rem);
+  transform: translateX(-50%);
+  text-align: center;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+  text-shadow: 0 .16rem .7rem #060806;
+  animation: court-caption .44s .52s ease-out both;
+}
+.cinematic-dialog[data-scene="quest"] .cinematic-caption { animation-delay: .98s; }
+.cinematic-dialog[data-scene="ending"] .cinematic-caption { animation-delay: .94s; }
+.cinematic-dialog[data-scene="verdict"] .cinematic-caption { animation-delay: .70s; }
+
+.cinematic-caption h2 {
+  margin: 0;
+  font: 660 clamp(1.9rem, 7vmin, 4.2rem) / 1.12 var(--serif, serif);
+  letter-spacing: .08em;
+  color: #f6e2b5;
+}
+.cinematic-caption p {
+  margin: .53rem 0 0;
+  font: 500 clamp(.83rem, 2.8vmin, 1.3rem) / 1.45 var(--serif, serif);
+  letter-spacing: .08em;
+  color: #d8d0b1;
+}
+.cinematic-count {
+  display: block;
+  margin-bottom: .28rem;
+  color: rgb(var(--scene-glow));
+  font: 670 clamp(2.1rem, 9vmin, 6rem) / .96 var(--serif, serif);
+  font-variant-numeric: tabular-nums;
+}
+
+.cinematic-skip {
+  position: absolute;
+  z-index: 4;
+  top: max(.8rem, env(safe-area-inset-top));
+  right: max(.85rem, env(safe-area-inset-right));
+  min-height: 44px;
+  min-width: 68px;
+  margin: 0;
+  padding: .4rem .75rem;
+  border: 1px solid #d6b37077;
+  border-radius: .35rem;
+  color: #f1e1bd;
+  background: #111915c9;
+}
+
+.cinematic-notice { max-width: min(calc(100vw - 1.5rem), 24rem); pointer-events: none; }
+.cinematic-book-notice {
+  position: fixed;
+  z-index: 10;
+  inset: auto max(.75rem, env(safe-area-inset-right)) max(4.7rem, env(safe-area-inset-bottom)) auto;
+}
+.cinematic-notice small { overflow-wrap: anywhere; }
+
+@keyframes court-caption {
+  from { opacity: 0; translate: 0 .7rem; }
+  to { opacity: 1; translate: 0 0; }
+}
+
+@keyframes court-arrive {
+  from { opacity: .12; translate: 0 -11%; rotate: -4deg; }
+  68% { opacity: 1; translate: 0 2%; rotate: 1deg; }
+  to { opacity: 1; translate: 0 0; rotate: 0deg; }
+}
+
+@keyframes court-seal {
+  from { opacity: 0; transform: translateY(-16%) rotateX(23deg) rotate(-8deg); }
+  52% { opacity: 1; transform: translateY(1%) rotateX(0deg) rotate(1deg); }
+  68% { transform: translateY(-1%) rotate(-1deg); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes court-scroll {
+  from { opacity: .13; transform: translate(-15%, -7%) rotate(-13deg); }
+  67% { opacity: 1; transform: translate(1%, 0) rotate(2deg); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes court-weight {
+  from { opacity: 0; translate: 0 -18%; scale: 1.045; }
+  44% { opacity: 1; translate: 0 2%; scale: 1; }
+  64% { opacity: 1; translate: 0 -.8%; }
+  to { opacity: 1; translate: 0 0; scale: 1; }
+}
+
+@keyframes court-light {
+  from { opacity: .18; }
+  37% { opacity: .72; }
+  to { opacity: .4; }
+}
+
+@keyframes court-halo {
+  0% { opacity: 0; scale: .25; }
+  20% { opacity: .9; }
+  88%, 100% { opacity: 0; scale: 1.95; }
+}
+
+@keyframes court-water {
+  0% { opacity: 0; scale: .2; }
+  36% { opacity: .58; }
+  100% { opacity: 0; scale: .97; }
+}
+
+@keyframes court-unseal {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(35%) rotateX(28deg); }
+}
+
+@keyframes court-portrait {
+  from { opacity: 0; transform: translateY(24%) rotateX(-8deg) scale(.88); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes court-card {
+  from { opacity: 0; translate: 0 -34%; scale: .91; }
+  68% { opacity: 1; translate: 0 2%; scale: 1; }
+  to { opacity: .9; translate: 0 0; scale: 1; }
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+  .cinematic-object { left: 34%; top: 52%; width: min(44vw,75dvh,23rem); }
+  .cinematic-caption {
+    left: 69%;
+    top: 53%;
+    bottom: auto;
+    width: 46vw;
+    transform: translate(-50%, -50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cinematic-dialog *, .cinematic-notice { animation: none !important; }
+  .cinematic-halo, .cinematic-dialog[data-scene="identity"] .cinematic-prop { visibility: hidden; }
+}

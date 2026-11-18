@@ -8,16 +8,18 @@ import {Authority} from './authority.mjs';
 import {accountClient} from './account.mjs';
 import {createHmac,timingSafeEqual} from 'node:crypto';
 import {hash} from './store.mjs';
-import {playerView,GameError,ROLES,AVATARS} from '../shared/engine.mjs';
-import {accountAvatar,playerName,avatarAssetPaths} from '../shared/fribench-game-kit/avatars.mjs';
-import {coverArt,musicPaths,portraitPaths} from '../shared/media.mjs';
+import {playerView,GameError,ROLES,AVATARS,nickname,roomAvatarTaken} from '../shared/engine.mjs';
+import {accountAvatar,playerName,avatarId,avatarAssetPaths} from '../shared/fribench-game-kit/avatars.mjs';
+import {coverArt,musicPaths,effectPaths,portraitPaths,sceneArt} from '../shared/media.mjs';
+import {invitePreview} from './room-membership.mjs';
+import {startBotTurns} from './bot-turns.mjs';
 
 const ROOT=fileURLToPath(new URL('../',import.meta.url));
 const JSON_LIMIT=8192;
 const codePattern=/^[A-F0-9]{10}$/;
 const cacheHeaders={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'};
 const json=(res,status,value)=>{res.writeHead(status,cacheHeaders);res.end(JSON.stringify(value));};
-export function buildApp({repository,dbPath=':memory:',publicOrigin='http://localhost:3000',resolveAccount=accountClient(undefined,publicOrigin),secureCookies=publicOrigin.startsWith('https:'),now=Date.now,root=ROOT,release='dev',rateLimit=true,trustProxy=false}={}) {
+export function buildApp({repository,dbPath=':memory:',publicOrigin='http://localhost:3000',resolveAccount=accountClient(undefined,publicOrigin),secureCookies=publicOrigin.startsWith('https:'),now=Date.now,root=ROOT,release='dev',rateLimit=true,trustProxy=false,botTurnDelay}={}) {
   const store=repository??new Store(dbPath,{now}), streams=new Map(),limits=new Map(),accounts=new WeakMap();
   const actor=new Authority(()=>store.flush?.()??Promise.resolve(),()=>{for(const stream of streams.values())stream.res.end();streams.clear();if(process.env.NODE_ENV==='production')setTimeout(()=>process.exit(1),100).unref();});
   const sendJSON=json;
@@ -29,6 +31,7 @@ export function buildApp({repository,dbPath=':memory:',publicOrigin='http://loca
   const jar=req=>Object.fromEntries((req.headers.cookie||'').split(';').map(x=>x.trim().split('=')).filter(x=>x.length===2));
   const setCookie=(res,name,value,age=2592000)=>{const old=res.getHeader('Set-Cookie');res.setHeader('Set-Cookie',[...(old?[old].flat():[]),`${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${age}${secureCookies?'; Secure':''}`]);};
   const online=code=>new Set([...streams.values()].filter(x=>x.code===code).map(x=>x.person.id));
+  const bots=startBotTurns({store,authority:actor,online,publish:broadcast,delay:botTurnDelay});
   function limit(key,max,period=60000) {
     if(!rateLimit)return;
     const value=limits.get(key);
@@ -48,7 +51,10 @@ export function buildApp({repository,dbPath=':memory:',publicOrigin='http://loca
     return person;
   }
   function view(room,id){return playerView(room,id,online(room.code));}
-  function broadcast(room) {actor.publish(()=>void publish(room));}
+  function accountSeatAvatar(room,id,avatar){
+    return roomAvatarTaken(room,id,avatar)?avatarId(room.players.find(p=>p.id===id).avatar):avatar;
+  }
+  function broadcast(room) {actor.publish(()=>{bots.track(room);void publish(room);});}
   async function publish(room) {
     for(const [key,stream] of streams)if(stream.code===room.code) {
       try {
@@ -71,6 +77,17 @@ export function buildApp({repository,dbPath=':memory:',publicOrigin='http://loca
     try {const value=JSON.parse(Buffer.concat(parts).toString('utf8'));if(!value||typeof value!=='object'||Array.isArray(value))throw new Error();return value;}catch{throw new GameError('BAD_JSON','请求内容无法读取。');}
   }
   function exact(data,keys){if(Object.keys(data).some(k=>!keys.includes(k)))throw new GameError('BAD_COMMAND','请求包含不支持的参数。');}
+  function profileInput(data,account){
+    if(!data||typeof data!=='object'||Array.isArray(data))throw new GameError('BAD_COMMAND','请填写昵称与头像。');
+    if(data.useAccount===true){
+      exact(data,['useAccount']);
+      if(!account)throw new GameError('UNAUTHENTICATED','请先登录账号。');
+      return {name:playerName(account.name),avatar:accountAvatar(account.picture),source:'account'};
+    }
+    exact(data,['name','avatar']);
+    if(!AVATARS.includes(data.avatar))throw new GameError('BAD_AVATAR','请选择提供的头像。');
+    return {name:nickname(data.name),avatar:data.avatar,source:'custom'};
+  }
   async function handle(req,res){
     res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','strict-origin');res.setHeader('X-Frame-Options','DENY');res.setHeader('X-Robots-Tag','noindex, nofollow');
     res.setHeader('Permissions-Policy','camera=(self), microphone=(), geolocation=()');
@@ -90,7 +107,17 @@ export function buildApp({repository,dbPath=':memory:',publicOrigin='http://loca
         if(path==='/api/session'&&req.method==='GET') {
           limit(`session:${clientIP}`,90);person=identify(req,res,true);
           const current=store.membership(person.id),account=accounts.get(req);
-          if(account&&person.profile_source!=='custom'&&(!current?.game||current.game.phase==='finished')){const name=playerName(account.name),avatar=accountAvatar(account.picture);if(person.name!==name||person.avatar!==avatar){if(current){const r=store.command(current.code,person,{id:crypto.randomUUID(),version:current.version,type:'profile',payload:{name,avatar}},online(current.code));Object.assign(current,r.room);broadcast(r.room);}person=store.profile(person,name,avatar,'account');}}
+          if(account&&person.profile_source!=='custom'&&(!current?.game||current.game.phase==='finished')){
+            const name=playerName(account.name),avatar=accountAvatar(account.picture);
+            if(person.name!==name||person.avatar!==avatar){
+              if(current){
+                const seatAvatar=accountSeatAvatar(current,person.id,avatar);
+                const r=store.command(current.code,person,{id:crypto.randomUUID(),version:current.version,type:'profile',payload:{name,avatar:seatAvatar}},online(current.code));
+                Object.assign(current,r.room);broadcast(r.room);
+              }
+              person=store.profile(person,name,avatar,'account');
+            }
+          }
           if(account)store.journal.profile(account.sub,playerName(account.name),accountAvatar(account.picture));respond(res,200,{person:{id:person.id,name:person.name,avatar:person.avatar},room:current?view(current,person.id):null});return;
         }
         person=identify(req,res);
@@ -128,21 +155,46 @@ export function buildApp({repository,dbPath=':memory:',publicOrigin='http://loca
           store.claim({...account,id:person.id},guest,room,hash(data.previewToken));actor.publish(()=>{for(const stream of streams.values())if(stream.person.id===guest.id||stream.person.id===person.id)stream.res.end();});setCookie(res,guestCookie,'',0);respond(res,200,{claimed:true,roomId:room?.code??null});return;
         }
         if(path==='/api/profile'&&req.method==='POST') {
-          let data=await body(req);const account=accounts.get(req);
-          if(data.useAccount===true){exact(data,['useAccount']);if(!account)throw new GameError('UNAUTHENTICATED','请先登录账号。');data={name:playerName(account.name),avatar:accountAvatar(account.picture)};}else exact(data,['name','avatar']);
+          const {name,avatar,source}=profileInput(await body(req),accounts.get(req));
           const current=store.membership(person.id);if(current?.game&&current.game.phase!=='finished')throw new GameError('GAME_RUNNING','本局昵称和头像已固定，请在大厅或结算后修改。');
-          if(current){const result=store.command(current.code,person,{id:crypto.randomUUID(),version:current.version,type:'profile',payload:data},online(current.code));broadcast(result.room);}
-          const p=store.profile(person,data.name,data.avatar,(await body(req)).useAccount===true?'account':'custom');respond(res,200,{person:{id:p.id,name:p.name,avatar:p.avatar}});return;
+          if(current){
+            const payload={name,avatar:source==='account'?accountSeatAvatar(current,person.id,avatar):avatar};
+            const result=store.command(current.code,person,{id:crypto.randomUUID(),version:current.version,type:'profile',payload},online(current.code));
+            broadcast(result.room);
+          }
+          const p=store.profile(person,name,avatar,source);respond(res,200,{person:{id:p.id,name:p.name,avatar:p.avatar}});return;
         }
         if(path==='/api/rooms'&&req.method==='POST') {
           limit(`create:${person.id}`,6);limit(`create-ip:${clientIP}`,15);
           const data=await body(req);exact(data,['settings']);const room=store.create(person,data.settings);respond(res,201,{view:view(room,person.id)});return;
         }
-        const match=path.match(/^\/api\/rooms\/([A-F0-9]{10})(?:\/(join|commands|events))?$/);
+        const match=path.match(/^\/api\/rooms\/([A-F0-9]{10})(?:\/(invite|join|commands|events))?$/);
         if(!match)throw new GameError('NOT_FOUND','接口不存在。');
         code=match[1];const action=match[2];
+        if(action==='invite'&&req.method==='GET'){
+          limit(`invite:${person.id}`,60);
+          let target;
+          try{target=store.get(code);}catch(error){if(error.code!=='ROOM_NOT_FOUND')throw error;}
+          respond(res,200,invitePreview(code,target,store.membership(person.id),person.id));return;
+        }
         if(action==='join'&&req.method==='POST'){
-          exact(await body(req),[]);limit(`join:${person.id}`,30);const room=store.join(code,person);broadcast(room);respond(res,200,{view:view(room,person.id)});return;
+          const data=await body(req);limit(`join:${person.id}`,30);
+          if(data.from===undefined){
+            exact(data,[]);
+            const room=store.join(code,person);
+            broadcast(room);respond(res,200,{view:view(room,person.id)});return;
+          }
+          exact(data,['from','profile']);
+          const from=data.from;
+          if(!from||typeof from!=='object'||Array.isArray(from))throw new GameError('BAD_COMMAND','请确认要离开的原房间。');
+          exact(from,['code','version']);
+          if(typeof from.code!=='string'||!codePattern.test(from.code)||!Number.isSafeInteger(from.version)||from.version<0)throw new GameError('BAD_COMMAND','请确认要离开的原房间。');
+          const profile=data.profile===undefined?null:profileInput(data.profile,accounts.get(req));
+          const result=store.switchRoom(code,person,from,profile);
+          if(result.previousRoom)broadcast(result.previousRoom);
+          broadcast(result.room);
+          const p=result.person??person;
+          respond(res,200,{person:{id:p.id,name:p.name,avatar:p.avatar},view:view(result.room,person.id)});return;
         }
         const room=store.get(code);
         if(action!=='commands'&&!room.players.some(p=>p.id===person.id))throw new GameError('NOT_MEMBER','请先通过邀请加入房间。');
@@ -168,8 +220,8 @@ export function buildApp({repository,dbPath=':memory:',publicOrigin='http://loca
       else if(/^\/assets\/styles-[a-f0-9]{16}\.css$/.test(path)){file='.dist/styles.css';mime='text/css; charset=utf-8';}
       else if(fixed[path]) [file,mime]=fixed[path];
       else if(avatarAssetPaths.includes(path)){file=path.slice(1);mime='image/webp';}
-      else if(path===coverArt||portraitPaths.includes(path)){file=path.slice(1);mime='image/webp';}
-      else if(musicPaths.includes(path)){file=path.slice(1);mime='audio/mpeg';}
+      else if(path===coverArt||portraitPaths.includes(path)||sceneArt.includes(path)){file=path.slice(1);mime='image/webp';}
+      else if(musicPaths.includes(path)||effectPaths.includes(path)){file=path.slice(1);mime='audio/mpeg';}
       else if(/^\/cards\/[a-z0-9_-]+\.png$/.test(path)&&Object.values(ROLES).some(r=>path===`/cards/${r.image}`)||['/cards/quest_success.png','/cards/quest_fail.png','/icons/app-icon.png','/icons/lady_token.png'].includes(path)){file=path.slice(1);mime='image/png';}
       else {json(res,404,{message:'页面不存在。'});return;}
       const full=resolve(root,file);if(!full.startsWith(resolve(root)))throw new Error('Invalid static path');
@@ -209,6 +261,6 @@ export function buildApp({repository,dbPath=':memory:',publicOrigin='http://loca
   server.requestTimeout=15000;server.headersTimeout=10000;
   const heartbeat=setInterval(()=>{for(const s of streams.values())void resolveAccount(s.req.headers.cookie).then(account=>{const owner=store.personAccount?.(s.person.id);if(owner&&owner!==account?.sub)s.res.end();else s.res.write('event: heartbeat\ndata: {}\n\n');}).catch(()=>s.res.end());},15000);heartbeat.unref();
   const maintenance=setInterval(()=>{void actor.run(()=>{store.cleanup();for(const [k,v]of limits)if(now()-v.start>120000)limits.delete(k);for(const s of streams.values()){try{store.get(s.code);}catch{actor.publish(()=>{s.res.write('event: expired\ndata: {}\n\n');s.res.end();});}}}).catch(()=>{});},60000);maintenance.unref();
-  const app={server,store,publicOrigin,online,async close(){clearInterval(heartbeat);clearInterval(maintenance);for(const s of streams.values())s.res.end();streams.clear();await new Promise(resolve=>server.close(resolve));await actor.run(()=>{}).catch(()=>{});await store.close();}};
+  const app={server,store,publicOrigin,online,async close(){bots.close();clearInterval(heartbeat);clearInterval(maintenance);for(const s of streams.values())s.res.end();streams.clear();await new Promise(resolve=>server.close(resolve));await actor.run(()=>{}).catch(()=>{});await store.close();}};
   return app;
 }
