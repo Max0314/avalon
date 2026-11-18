@@ -31,7 +31,7 @@ dialog.cinematic-dialog:not([data-running]) * { animation-play-state: paused; }
   inset: 0;
   overflow: hidden;
   pointer-events: none;
-  background: #111a14;
+  background: #141419;
 }
 
 .cinematic-frame::before,
@@ -42,13 +42,13 @@ dialog.cinematic-dialog:not([data-running]) * { animation-play-state: paused; }
 }
 
 .cinematic-frame::before {
-  background: url('/art/round-hall.webp') center 56% / cover no-repeat;
-  opacity: .72;
+  background: url('/art/night/round-hall.webp') center 56% / cover no-repeat;
+  opacity: .87;
 }
 
 .cinematic-frame::after {
   background:
-    linear-gradient(180deg, #080b0a88 0%, transparent 35%, #080b0a73 56%, #080b0af5 100%),
+    linear-gradient(180deg, #090b114a 0%, transparent 35%, #080b0a73 56%, #080b0af5 100%),
     radial-gradient(ellipse at 50% 43%, transparent 12%, #080b0ac8 97%);
 }
 
@@ -57,7 +57,8 @@ dialog.cinematic-dialog:not([data-running]) * { animation-play-state: paused; }
 }
 
 .cinematic-dialog[data-scene="ending"][data-tone="evil"] .cinematic-frame::before {
-  filter: sepia(.35) hue-rotate(-23deg) brightness(.58) contrast(1.15);
+  background-image: url('/art/night/round-hall.webp');
+  filter: saturate(.66) brightness(.77);
 }
 
 .cinematic-light {
@@ -269,7 +270,7 @@ dialog.cinematic-dialog:not([data-running]) * { animation-play-state: paused; }
 
 @keyframes court-light {
   from { opacity: .18; }
-  37% { opacity: .72; }
+  37% { opacity: .87; }
   to { opacity: .4; }
 }
 

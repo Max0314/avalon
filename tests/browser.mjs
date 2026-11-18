@@ -101,7 +101,7 @@ try{
   await click(pages[0],'home-handbook');
   await pages[0].getByRole('tab',{name:'角色图鉴'}).waitFor();
   await pages[0].locator('.handbook-role-button[data-role="merlin"]').click();
-  assert.equal(await pages[0].locator('.handbook-profile img').first().getAttribute('src'),'/art/merlin.webp');
+  assert.equal(await pages[0].locator('.handbook-profile img').first().getAttribute('src'),'/art/night/merlin.webp');
   await pages[0].locator('[data-role-back]').first().click();
   await click(pages[0],'modal-close');
   await click(pages[0],'audio-settings');
@@ -201,11 +201,13 @@ try{
   const cached=await player('缓存玩家');await click(cached,'offline-menu');await click(cached,'prepare-offline');await cached.getByText('离线素材已准备好。断网后可再次打开本站或主屏幕入口。',{exact:true}).waitFor();
   await cached.context().setOffline(true);await cached.reload();await setupOffline(cached);await cached.locator('.room-code').waitFor();
   const cachedMedia=await cached.evaluate(async()=>{
-    const art=await fetch('/art/merlin.webp');
+    const art=await fetch('/art/night/merlin.webp');
+    const table=await fetch('/art/council-table.webp');
+    const legacyArt=await fetch('/art/merlin.webp');
     const music=await fetch('/audio/hall.mp3',{headers:{Range:'bytes=0-31'}});
-    return [art.status,music.status,(await music.arrayBuffer()).byteLength];
+    return [art.status,table.status,legacyArt.status,music.status,(await music.arrayBuffer()).byteLength];
   });
-  assert.deepEqual(cachedMedia,[200,206,32]);
+  assert.deepEqual(cachedMedia,[200,200,200,206,32]);
   const practice=await player('练习玩家',true);
   await click(practice,'offline-menu');await click(practice,'practice-menu');
   await practice.locator('#practice-count').selectOption('7');await practice.locator('#practice-role').selectOption('merlin');

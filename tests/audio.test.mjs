@@ -62,22 +62,22 @@ test('sound waits for a gesture, respects both channels and discards obsolete tr
     listeners.get('click')({isTrusted:true});
     await tick();
     assert.equal(opened,1);
-    assert.deepEqual(requested,['/audio/hall.mp3']);
+    assert.deepEqual(requested,['/audio/night/hall.mp3']);
 
     audio.setAudioScene('vote');
-    assert.deepEqual(requested,['/audio/hall.mp3','/audio/quest.mp3']);
-    loaded.get('/audio/hall.mp3')();
+    assert.deepEqual(requested,['/audio/night/hall.mp3','/audio/night/quest.mp3']);
+    loaded.get('/audio/night/hall.mp3')();
     await tick();
     assert.equal(songs.length,0);
-    loaded.get('/audio/quest.mp3')();
+    loaded.get('/audio/night/quest.mp3')();
     await tick();
-    assert.equal(songs[0].buffer,'/audio/quest.mp3');
+    assert.equal(songs[0].buffer,'/audio/night/quest.mp3');
     assert.equal(songs[0].loop,true);
 
     audio.setAudioSettings({track:'hall',effects:false,musicVolume:62});
     await tick();
     assert.equal(songs.length,2);
-    assert.equal(songs[1].buffer,'/audio/hall.mp3');
+    assert.equal(songs[1].buffer,'/audio/night/hall.mp3');
     assert.equal(songs[0].stopped,3.48);
     assert.deepEqual(JSON.parse(saved.get('avalon.audio.v1')),{
       track:'hall',music:true,effects:false,musicVolume:62,effectsVolume:55,privateEffects:true,
@@ -101,7 +101,7 @@ test('sound waits for a gesture, respects both channels and discards obsolete tr
     globals.document.hidden = false;
     listeners.get('visibilitychange')();
     await tick();
-    assert.equal(songs[2].buffer,'/audio/hall.mp3');
+    assert.equal(songs[2].buffer,'/audio/night/hall.mp3');
     assert.equal(requested.length,2);
 
     const preload=audio.preloadCue('wax');
@@ -128,7 +128,7 @@ test('sound waits for a gesture, respects both channels and discards obsolete tr
     muted.setAudioSettings({music:true},{isTrusted:true});
     await tick();
     assert.equal(opened,2);
-    assert.equal(requested.at(-1),'/audio/hall.mp3');
+    assert.equal(requested.at(-1),'/audio/night/hall.mp3');
 
     const playerPrefs=saved.get('avalon.audio.v1');
     globals.location.search='?display=cast';

@@ -2,6 +2,7 @@
 const CACHE='fribench-avalon-__BUILD_ID__';
 const SHELL=['/','/assets/app-__BUILD_ID__.js','/assets/styles-__BUILD_ID__.css','/manifest.json','/icons/app-icon.png','/art/camelot.webp'];
 const ART=__ART_FILES__;
+const PREVIOUS_MEDIA=__PREVIOUS_MEDIA__;
 const READY='/__avalon_offline_ready__';
 self.addEventListener('install',event=>event.waitUntil((async()=>{
   const cache=await caches.open(CACHE);
@@ -22,6 +23,7 @@ self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=
 self.addEventListener('fetch',event=>{
   const req=event.request,url=new URL(req.url);
   if(req.method!=='GET'||url.origin!==location.origin||url.pathname.startsWith('/api/')||url.pathname.startsWith('/_fribench/')||url.pathname==='/healthz'||url.pathname==='/readyz')return;
+  const assetPath=PREVIOUS_MEDIA[url.pathname]??url.pathname;
   if(req.mode==='navigate'){
     event.respondWith((async()=>{
       const cache=await caches.open(CACHE);
@@ -33,15 +35,15 @@ self.addEventListener('fetch',event=>{
       }
     })());
   }
-  else if(SHELL.includes(url.pathname)||ART.includes(url.pathname)){
+  else if(SHELL.includes(url.pathname)||ART.includes(assetPath)){
     event.respondWith((async()=>{
-      const cache=await caches.open(CACHE),hit=await cache.match(req);
+      const cache=await caches.open(CACHE),hit=await cache.match(assetPath);
       if(hit){
         const range=url.pathname.startsWith('/audio/')&&req.headers.get('Range');
         return range?audioRange(hit,range):hit;
       }
       const response=await fetch(req);
-      if(response.status===200)await cache.put(req,response.clone());
+      if(response.status===200)await cache.put(assetPath,response.clone());
       return response;
     })());
   }

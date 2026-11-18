@@ -7,7 +7,7 @@
   max-height: calc(var(--visual-height, 100dvh) - 16px);
   padding: 0;
   overflow: hidden;
-  background: linear-gradient(140deg, #263a30, #131e1b 64%);
+  background: linear-gradient(140deg, #29282c, #17181d 64%);
   color: #f1e8d5;
   scrollbar-gutter: auto;
 }
@@ -26,8 +26,8 @@
   --book-muted: #5e4f3d;
   --book-gold: #e6c894;
   --book-border: #7853345e;
-  --book-paper: #ebddbe;
-  --book-leaf: radial-gradient(ellipse at 16% 7%, #f5e7c8 0, transparent 53%),
+  --book-paper: #dfd4be;
+  --book-leaf: radial-gradient(ellipse at 16% 7%, #ede4cf 0, transparent 53%),
     radial-gradient(ellipse at 94% 98%, #ba955d4d, transparent 58%),
     repeating-linear-gradient(117deg, #67461b05 0 1px, transparent 1px 5px), var(--book-paper);
   display: grid;
@@ -48,7 +48,7 @@
   gap: 4px;
   border-radius: 8px;
   padding: 3px;
-  background: #111c19;
+  background: #19191d;
   border: 1px solid #ad945354;
 }
 
@@ -62,7 +62,7 @@
 
 .handbook-tabs button:hover:enabled, .handbook-pager button:hover:enabled {
   color: #fff4dc;
-  background: #344331;
+  background: #393335;
   border-color: #b5955a9c;
 }
 
@@ -151,7 +151,7 @@
   align-content: end;
   padding: clamp(10px, 3vw, 20px);
   border-radius: 6px;
-  background: linear-gradient(90deg, #13251fe8 5%, #13251fab 60%, #13251f4c), url('/art/camelot.webp') center 48% / cover #17271f;
+  background: linear-gradient(90deg, #141519eb 5%, #141519b8 60%, #14151950), url('/art/night/round-hall.webp') center 48% / cover #17271f;
   color: #f8e8c6;
 }
 
@@ -238,25 +238,26 @@
 
 .handbook-role-picker {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 128px));
-  gap: clamp(5px, 2vw, 14px);
-  justify-content: start;
+  grid-template-columns: repeat(3,minmax(0,1fr));
+  gap: clamp(8px,1.8vw,16px);
   align-items: start;
 }
 
 .handbook-role-button {
-  min-width: 0;
-  display: grid;
-  justify-items: center;
-  align-content: start;
-  gap: 5px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--book-ink);
-  padding: 4px;
+  width:100%;
+  min-width:0;
+  display:grid;
+  gap:8px;
+  align-content:start;
+  padding:7px;
+  text-align:left;
+  border:1px solid var(--book-border);
+  border-radius:4px;
+  background:#fcf4e142;
+  color:var(--book-ink);
 }
-
+.handbook-role-copy { min-width:0; display:grid; gap:4px; padding:0 2px 3px; }
+.handbook-role-summary { color:#534738; font:13px/1.55 system-ui,sans-serif; }
 .handbook-role-button:hover:enabled {
   color: var(--faction);
   background: var(--faction-light);
@@ -265,20 +266,20 @@
 
 .handbook-role-label {
   font-weight: 680;
-  font-size: clamp(.71rem, 2.3vw, .92rem);
+  font:700 clamp(16px,2.3vw,22px)/1.25 var(--serif);
   line-height: 1.25;
   overflow-wrap: anywhere;
-  text-align: center;
+  text-align: left;
 }
 
 .handbook-thumb {
   display: block;
   position: relative;
-  width: min(100%, 110px);
+  width:100%;
   aspect-ratio: 4 / 5;
   overflow: hidden;
-  border-radius: 58% 58% 10% 10% / 34% 34% 8% 8%;
-  background: #263127;
+  border-radius: 4px;
+  background: #232126;
   box-shadow: 0 3px 4px #452c1f35;
 }
 
@@ -293,7 +294,7 @@
   z-index: 1;
 }
 
-.handbook-thumb::after { inset: 8px; border-color: #bd884caa; }
+.handbook-thumb::after { inset: 6px; border-color: #bd884c55; }
 
 .handbook-thumb img, .handbook-portrait img {
   display: block;
@@ -348,7 +349,7 @@
   position: absolute;
   pointer-events: none;
   inset: 0;
-  background: linear-gradient(to right, transparent 72%, #ebddbe80 90%, var(--book-paper));
+  background: linear-gradient(to right, transparent 72%, #dfd4be80 90%, var(--book-paper));
 }
 
 .handbook-profile-copy { align-self: center; min-width: 0; padding: clamp(12px, 3vw, 26px); }
@@ -392,12 +393,15 @@
 @media (max-width: 550px) {
   .handbook { gap: 5px; }
   .handbook-tabs button, .handbook-pager button { font-size: .78rem; }
-  .handbook-role-picker { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .handbook-role-button { padding: 2px; }
+  .handbook-role-picker { grid-template-columns: minmax(0,1fr); gap:7px; }
+  .handbook-role-button { grid-template-columns:clamp(61px,18vw,93px) minmax(0,1fr); align-items:center; gap:12px; padding:5px; }
+  .handbook-role-copy { padding-right:5px; }
+  .handbook-thumb { aspect-ratio:4/5; }
+
   .handbook-profile { grid-template-columns: minmax(0,1fr); }
   .handbook-portrait { min-height: 0; height: clamp(157px, 31dvh, 245px); }
   .handbook-portrait img { object-position: 50% 22%; }
-  .handbook-portrait::after { background: linear-gradient(to bottom, transparent 78%, #ebddbe80 92%, var(--book-paper)); }
+  .handbook-portrait::after { background: linear-gradient(to bottom, transparent 78%, #dfd4be80 92%, var(--book-paper)); }
   .handbook-counts { gap: 3px; }
   .handbook-counts button { flex: 1 1 39px; padding-inline: 1px; font-size: .79rem; }
 }

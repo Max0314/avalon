@@ -3,7 +3,7 @@ import {build} from 'esbuild';
 import {mkdir,writeFile,readFile,readdir} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {ROLES} from '../shared/engine.mjs';
-import {coverArt,musicPaths,effectPaths,portraitPaths,sceneArt} from '../shared/media.mjs';
+import {coverArt,musicPaths,effectPaths,portraitPaths,sceneArt,previousMediaPaths} from '../shared/media.mjs';
 import {avatarAssetPaths} from '../shared/fribench-game-kit/avatars.mjs';
 await mkdir('.dist',{recursive:true});
 await build({entryPoints:['web/app.mjs'],bundle:true,format:'esm',target:['es2022'],outfile:'.dist/app.js',minify:true,legalComments:'eof'});
@@ -25,7 +25,7 @@ for(const url of [coverArt,...portraitPaths,...sceneArt,...musicPaths,...effectP
   hash.update(bytes);
 }
 const digest=hash.digest('hex').slice(0,16);
-const worker=template.replaceAll('__BUILD_ID__',digest).replace('__ART_FILES__',JSON.stringify(art));
+const worker=template.replaceAll('__BUILD_ID__',digest).replace('__ART_FILES__',JSON.stringify(art)).replace('__PREVIOUS_MEDIA__',JSON.stringify(previousMediaPaths));
 await writeFile('.dist/index.html',(await readFile('index.html','utf8')).replace('/assets/app.js',`/assets/app-${digest}.js`).replace('/assets/styles.css',`/assets/styles-${digest}.css`),'utf8');
 await writeFile('.dist/sw.js',worker,'utf8');
 const licenses=await Promise.all([['qrcode','license'],['jsqr','LICENSE']].map(async([name,file])=>`${name}\n${await readFile(`node_modules/${name}/${file}`,'utf8')}\n`));

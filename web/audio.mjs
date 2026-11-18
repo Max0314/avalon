@@ -5,7 +5,7 @@ const SETTINGS_KEY = new URLSearchParams(globalThis.location?.search).has('displ
   ? 'avalon.audio.display.v1' : 'avalon.audio.v1';
 const DEFAULTS = {track:'auto',music:true,effects:true,musicVolume:34,effectsVolume:55,privateEffects:true};
 const CROSSFADE = .48;
-export const AUDIO_TRACKS = Object.freeze({auto:'随对局切换',hall:'圆桌之厅',quest:'远征之路',dusk:'暮色与密誓'});
+export const AUDIO_TRACKS = Object.freeze({auto:'随对局切换',hall:'烛下圆桌',quest:'夜渡关隘',dusk:'铁钟密誓'});
 
 const SCENE_TRACK = {
   nominate:'quest', vote:'quest', quest:'quest', questResult:'quest',

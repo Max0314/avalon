@@ -10,7 +10,7 @@ import {createHmac,timingSafeEqual} from 'node:crypto';
 import {hash} from './store.mjs';
 import {playerView,GameError,ROLES,AVATARS,nickname,roomAvatarTaken} from '../shared/engine.mjs';
 import {accountAvatar,playerName,avatarId,avatarAssetPaths} from '../shared/fribench-game-kit/avatars.mjs';
-import {coverArt,musicPaths,effectPaths,portraitPaths,sceneArt} from '../shared/media.mjs';
+import {coverArt,musicPaths,effectPaths,portraitPaths,sceneArt,previousMediaPaths} from '../shared/media.mjs';
 import {invitePreview} from './room-membership.mjs';
 import {startBotTurns} from './bot-turns.mjs';
 
@@ -214,14 +214,15 @@ export function buildApp({repository,dbPath=':memory:',publicOrigin='http://loca
         throw new GameError('NOT_FOUND','接口不存在。');
       }
       if(!['GET','HEAD'].includes(req.method)){json(res,405,{message:'不支持这个请求方法。'});return;}
+      const mediaPath=previousMediaPaths[path]??path;
       let file,mime;
       const fixed={'/':['.dist/index.html','text/html; charset=utf-8'],'/index.html':['.dist/index.html','text/html; charset=utf-8'],'/assets/app.js':['.dist/app.js','text/javascript; charset=utf-8'],'/assets/styles.css':['.dist/styles.css','text/css; charset=utf-8'],'/manifest.json':['manifest.json','application/manifest+json'],'/sw.js':['.dist/sw.js','text/javascript; charset=utf-8'],'/licenses.txt':['.dist/THIRD-PARTY-LICENSES.txt','text/plain; charset=utf-8']};
       if(/^\/assets\/app-[a-f0-9]{16}\.js$/.test(path)){file='.dist/app.js';mime='text/javascript; charset=utf-8';}
       else if(/^\/assets\/styles-[a-f0-9]{16}\.css$/.test(path)){file='.dist/styles.css';mime='text/css; charset=utf-8';}
       else if(fixed[path]) [file,mime]=fixed[path];
       else if(avatarAssetPaths.includes(path)){file=path.slice(1);mime='image/webp';}
-      else if(path===coverArt||portraitPaths.includes(path)||sceneArt.includes(path)){file=path.slice(1);mime='image/webp';}
-      else if(musicPaths.includes(path)||effectPaths.includes(path)){file=path.slice(1);mime='audio/mpeg';}
+      else if(path===coverArt||portraitPaths.includes(mediaPath)||sceneArt.includes(mediaPath)){file=mediaPath.slice(1);mime='image/webp';}
+      else if(musicPaths.includes(mediaPath)||effectPaths.includes(mediaPath)){file=mediaPath.slice(1);mime='audio/mpeg';}
       else if(/^\/cards\/[a-z0-9_-]+\.png$/.test(path)&&Object.values(ROLES).some(r=>path===`/cards/${r.image}`)||['/cards/quest_success.png','/cards/quest_fail.png','/icons/app-icon.png','/icons/lady_token.png'].includes(path)){file=path.slice(1);mime='image/png';}
       else {json(res,404,{message:'页面不存在。'});return;}
       const full=resolve(root,file);if(!full.startsWith(resolve(root)))throw new Error('Invalid static path');

@@ -454,7 +454,7 @@ function tableMarkup(ended=false){
     const selectable=!ended&&canPick(g,p.id);
     const clue=ended||!g.confirmed.includes(view.me)?null:g.intel.find(info=>info.id===p.id);
     const marks=[
-      g.leaderId===p.id?['队','队长']:null, g.team.includes(p.id)?['阵','出征']:null,
+      g.leaderId===p.id?['队','队长','leader']:null, g.team.includes(p.id)?['阵','出征','team']:null,
       g.phase==='vote'&&g.voted.includes(p.id)?['票','已投票']:null,
       g.phase==='quest'&&g.questSubmitted.includes(p.id)?['牌','已交牌']:null,
       g.phase==='reveal'&&g.confirmed.includes(p.id)?['已','已确认']:null,
@@ -462,7 +462,7 @@ function tableMarkup(ended=false){
     ].filter(Boolean);
     const publicRole=ended?ROLES[g.roles[p.id]]:null;
     return `<div class="seat ${p.online?'':'seat-away'}">
-      <button class="seat-button ${p.id===view.me?'self':''} ${selected?'selected':''}" data-seat="${p.id}" aria-label="${esc((selectable?'选择 ':'查看 ')+p.name+(marks.length?' · '+marks.map(m=>m[1]).join(' · '):''))}"${selectable?` aria-pressed="${selected}"`:''}${disabled(busy)}>
+      <button class="seat-button ${p.id===view.me?'self':''} ${selected?'selected':''}" data-seat="${p.id}" aria-label="${esc((selectable?'选择 ':'查看 ')+p.name+(p.online?'':' · 离线')+(marks.length?' · '+marks.map(m=>m[1]).join(' · '):''))}"${selectable?` aria-pressed="${selected}"`:''}${disabled(busy)}>
         <span class="seat-number">${i+1}</span><span class="seat-icon">${avatarImage(p.avatar,36)}</span>
         <span class="seat-name">${esc(p.name)}${p.id===view.me?' · 你':''}</span>
         ${publicRole?`<span class="seat-public-role ${publicRole.side}">${publicRole.name}</span>`:`<span class="seat-flags" aria-hidden="true">${marks.map(([symbol,label,kind])=>`<i class="seat-state-dot" data-kind="${kind||'public'}" title="${esc(label)}">${symbol}</i>`).join('')}</span>`}

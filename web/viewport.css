@@ -3,7 +3,7 @@ html {
   height: 100%;
   overflow: hidden;
   overscroll-behavior: none;
-  background: #101a16;
+  background: #0e1014;
 }
 
 body {
@@ -54,7 +54,7 @@ button, a, summary { touch-action: manipulation; }
 }
 .header-actions { flex-wrap: nowrap; }
 .header-button { padding: 4px 8px; min-height: 39px; min-width: 37px; background: transparent; border-color: transparent; }
-.header-button:hover:enabled { background: #34483c; }
+.header-button:hover:enabled { background: #333237; }
 .brand { flex: none; font-size: clamp(16px,2.5vw,24px); gap: 7px; }
 .brand small { display: none; }
 .brand-mark { width: 33px; height: 33px; }
@@ -70,21 +70,21 @@ button, a, summary { touch-action: manipulation; }
   padding: 0 8px max(4px,env(safe-area-inset-bottom));
   border: 0;
   font-size: 9px;
-  color: #aebcaf;
+  color: #b4b0a9;
   gap: 4px 12px;
 }
 body[data-view]:not([data-view="home"]) .site-footer { display:none; }
 body:not([data-view="home"]) #app { padding-bottom: max(7px, env(safe-area-inset-bottom)); }
 body:is([data-view="lobby"],[data-view="game"],[data-view="finished"]) {
-  background: linear-gradient(#132119e0,#14231ae9), url('/art/round-hall.webp') center/cover;
+  background: linear-gradient(180deg,#0e1015b3,#0d0e13a6 50%,#0e0e13dc), url('/art/night/round-hall.webp') center/cover;
 }
-.lobby-roster-panel,.lobby-settings-panel { background:linear-gradient(145deg,#26392edb,#17271ee8); }
+.lobby-roster-panel,.lobby-settings-panel { background:linear-gradient(145deg,#25262be8,#15161ce8); }
 #app:not([data-screen="home"]):not([data-screen="closed"]) .room-top {
   margin: 0;
   padding: 7px 11px;
   flex-direction: row;
   align-items: center;
-  background: linear-gradient(90deg,#18231cc9,#17241cea), url('/art/round-hall.webp') center 42%/cover;
+  background: linear-gradient(95deg,#28272cdb,#14151ae8);
 }
 .room-top .mode-label, .room-top h1 { display: none; }
 .room-top .room-code { display: block; font-size: 12px; line-height: 1.2; }
@@ -96,59 +96,81 @@ body:is([data-view="lobby"],[data-view="game"],[data-view="finished"]) {
 #app[data-screen="home"] { grid-template-rows: minmax(0,1fr); }
 .front-door {
   display: grid;
-  grid-template-rows: minmax(0,1fr) auto auto;
+  grid-template: "intro gallery" 1fr "actions gallery" 1fr / minmax(250px,.82fr) minmax(0,1.18fr);
+  align-items: center;
+  gap: 18px clamp(12px,2.4vw,40px);
   min-height: 0;
-  padding: clamp(8px,2.5dvh,25px) clamp(8px,3vw,36px) 9px;
-  border: 1px solid #ac906559;
-  border-radius: 20px;
+  padding: clamp(12px,4dvh,48px) clamp(18px,5vw,86px);
   overflow: hidden;
-  background: linear-gradient(0deg,#0f1a15 0%,#17231b96 51%,#142018bd 100%), url('/art/camelot.webp') center 42%/cover;
+  border: 1px solid #c4a77740;
+  border-radius: 5px;
+  background: linear-gradient(90deg,#0a0c10ec 0%,#111319ac 37%,#14131922 73%),
+    linear-gradient(0deg,#0d0c0feb,transparent 26%,transparent 75%,#0e101766),
+    url('/art/night/round-hall.webp') center 50% / cover #14161a;
 }
-.portrait-stage { position: relative; min-height: 0; touch-action: pan-y pinch-zoom; }
-.portrait-track { position: absolute; inset: 0; overflow: hidden; container-type: size; }
+.portrait-readout { grid-area:intro; align-self:end; max-width:32rem; }
+.portrait-readout h1 {
+  color:#f2e7d3;
+  font: 600 clamp(54px,6.8vw,108px)/1.15 var(--serif);
+  letter-spacing:.12em;
+  margin:.14em 0 .18em;
+  text-shadow:0 3px 30px #0008;
+}
+.front-format { margin:0; color:#dec49a; font-size:13px; letter-spacing:.15em; }
+.front-format span { padding:0 .4em; color:#9d835e; }
+.front-premise { margin:0; max-width:24em; color:#d4ccc1; font-size:clamp(14px,1.25vw,19px); line-height:1.8; }
+.portrait-gallery {
+  grid-area:gallery; min-height:0; height:100%; max-height:720px;
+  display:grid; grid-template-rows:minmax(0,1fr) auto; align-self:center;
+}
+.portrait-stage { position:relative; min-height:0; touch-action:pan-y pinch-zoom; }
+.portrait-track { position:absolute; inset:0; overflow:hidden; container-type:size; }
 .portrait-card {
-  --portrait-step: min(23cqw,19rem);
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: min(42cqw, 71cqh, 22rem);
-  aspect-ratio: 3/4;
-  padding: 4px;
-  min-height: 0;
-  border: 1px solid #caa875;
-  border-radius: 50% 50% 9px 9px / 32% 32% 9px 9px;
-  background: #3e3221;
-  transform: translate(-50%,-50%) translateX(calc(var(--portrait-x) * var(--portrait-step))) scale(var(--portrait-scale));
-  opacity: var(--portrait-opacity);
-  z-index: var(--portrait-depth);
-  box-shadow: 0 16px 38px #0009, inset 0 0 0 1px #eed4a54d;
-  overflow: hidden;
-  transition: transform .27s cubic-bezier(.2,.65,.3,1), opacity .2s;
+  --portrait-step:min(24cqw,10.5rem);
+  position:absolute; top:52%; left:50%;
+  width:min(64cqw,66cqh,23rem);
+  aspect-ratio:3/4;
+  min-height:0; padding:0;
+  overflow:hidden; border:1px solid #a18b6a; border-radius:3px;
+  background:#14151a;
+  transform:translate(-50%,-50%) translateX(calc(var(--portrait-x)*var(--portrait-step)))
+    scale(var(--portrait-scale)) rotate(calc(var(--portrait-x)*5deg));
+  opacity:var(--portrait-opacity); z-index:var(--portrait-depth);
+  box-shadow:0 12px 28px #0009;
+  transition:transform .30s cubic-bezier(.2,.65,.3,1),opacity .22s;
 }
-.portrait-card img { width: 100%; height: 100%; display: block; object-fit: cover; border-radius: inherit; pointer-events: none; }
-.portrait-stage[data-dragging] .portrait-card { transition: none; cursor: grabbing; }
-.portrait-card:focus-visible { outline-offset: -4px; }
-.portrait-readout {
-  display: grid;
-  grid-template-columns: 1fr;
-  justify-items: center;
-  color: #eac791;
-  min-height: 70px;
+.portrait-card::after {
+  content:""; pointer-events:none; position:absolute; inset:5px;
+  border:1px solid #e9d7ad59;
 }
-.portrait-readout h1 { margin: 0; color: #f7ecda; font-size: clamp(26px,5.2vw,58px); line-height: 1.06; }
-.portrait-readout [data-portrait-name] { font-size: clamp(12px,2.2vw,18px); min-height: 1.45em; transition: opacity .13s; }
-.portrait-controls { display: flex; align-items: center; gap: 6px; font: 13px ui-monospace,monospace; }
-.portrait-controls button { width: 38px; min-height: 35px; padding: 0; border-color: transparent; background: transparent; font-size: 23px; }
-.portrait-controls output { min-width: 50px; text-align: center; }
-.front-actions { display: grid; grid-template-columns: 1fr auto; gap: 7px 12px; align-items: center; }
-.front-play,.front-library,.front-more,.resume-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-.front-play button { min-height: 42px; }
-.front-library { justify-content: flex-end; }
-.front-library button,.front-more button { background: transparent; border-color: transparent; font-size: 12px; min-height: 34px; padding: 3px 8px; }
-.front-more { grid-column: 1/-1; opacity: .93; }
-.resume-actions { flex: 1; justify-content: flex-end; min-height: 34px; }
-.resume-actions button[hidden] { display: inline-flex !important; visibility: hidden; }
-#resume-current { color: var(--gold); }
+.portrait-card img { width:100%; height:100%; display:block; object-fit:cover; pointer-events:none; }
+.portrait-card:not([aria-current="true"]) img { filter:brightness(.63) saturate(.77); }
+.portrait-card[aria-current="true"] { border-color:#e2c49a; }
+.portrait-stage[data-dragging] .portrait-card { transition:none; cursor:grabbing; }
+.portrait-card:focus-visible { outline-offset:-4px; }
+.portrait-caption {
+  position:absolute; inset:auto 0 0; display:grid; gap:1px; text-align:left;
+  padding:21% 8% 7%;
+  background:linear-gradient(0deg,#090a0df2,#0c0b0caf 56%,transparent);
+  color:#f8edd8; pointer-events:none;
+}
+.portrait-caption small { color:#e1caa7; font:500 clamp(10px,1vw,13px)/1.6 system-ui,sans-serif; letter-spacing:.14em; }
+.portrait-caption strong { font:600 clamp(22px,2.8vw,42px)/1.2 var(--serif); }
+.portrait-card:not([aria-current="true"]) .portrait-caption { opacity:0; }
+.portrait-controls { display:flex; align-items:center; justify-content:center; gap:12px; font:13px ui-monospace,monospace; }
+.portrait-controls button { width:40px; min-height:36px; padding:0; border:1px solid #9b897060; background:#13151acc; font-size:23px; }
+.portrait-controls output { min-width:52px; text-align:center; color:#dfc6a0; }
+.front-actions { grid-area:actions; align-self:start; display:grid; gap:12px; max-width:31rem; }
+.front-play { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.front-play button { min-height:48px; font-size:16px; }
+.front-library { display:flex; justify-content:space-between; gap:2px; border-top:1px solid #e3ceb143; }
+.front-library button,.resume-actions button {
+  min-width:0; min-height:38px; padding:4px 2px; background:transparent; border:0;
+  color:#d9cdbd; font-size:13px; white-space:nowrap;
+}
+.resume-actions { display:flex; align-items:center; gap:18px; min-height:38px; }
+.resume-actions button[hidden] { display:inline-flex!important; visibility:hidden; }
+#resume-current { color:var(--gold); }
 
 .inner-scroll,.roster,.history-body {
   min-height: 0;
@@ -187,7 +209,7 @@ body:is([data-view="lobby"],[data-view="game"],[data-view="finished"]) {
   pointer-events: none;
   box-shadow: 0 12px 30px #000a;
   border-color: #e5bf75;
-  background: #23372c;
+  background: #333136;
 }
 .seat-drag-gap { opacity: .16; border-style: dashed; }
 .lobby-settings-panel { align-self: stretch; min-height: 0; padding: 12px; }
@@ -212,11 +234,11 @@ body:is([data-view="lobby"],[data-view="game"],[data-view="finished"]) {
   display: grid;
   place-items: center;
   container-type: size;
-  background: radial-gradient(ellipse at center,#182b2397,transparent 65%);
+  background: radial-gradient(ellipse at center,#17131538,transparent 65%);
 }
 .round-table[data-count] {
   --table-size: min(82vw,51dvh,560px);
-  --table-size: min(86cqw,88cqh,560px);
+  --table-size: min(95cqw,92cqh,580px);
   width: var(--table-size);
   height: var(--table-size);
   min-width: 0;
@@ -225,8 +247,8 @@ body:is([data-view="lobby"],[data-view="game"],[data-view="finished"]) {
   aspect-ratio: 1;
   border-radius: 50%;
   border: 1px solid #a18755aa;
-  background: radial-gradient(circle at 47% 39%,#43553d,#233930 57%,#1b2f26 71%);
-  box-shadow: inset 0 0 0 4px #b49a6230, inset 0 0 0 6px #b4975e29, 0 0 28px #0a140e98;
+  background: linear-gradient(#0b0c1120,#0b0c1140), url('/art/council-table.webp') center/100% 100% #322a25;
+  box-shadow: 0 9px 24px #04040699, 0 0 0 2px #161517;
 }
 .round-table[data-count] .seat {
   position: absolute;
@@ -247,7 +269,7 @@ body:is([data-view="lobby"],[data-view="game"],[data-view="finished"]) {
   box-shadow: none;
   border-radius: 12px;
 }
-.round-table[data-count] .seat-button:is(.selected,:focus-visible) { border-color: var(--gold); background: #2c4135e0; }
+.round-table[data-count] .seat-button:is(.selected,:focus-visible) { border-color: var(--gold); background: #39302be8; }
 .round-table[data-count] .seat-button.selected::after { right: 3px; top: 4px; }
 .round-table[data-count] .seat-icon .game-avatar {
   display: block;
@@ -257,23 +279,26 @@ body:is([data-view="lobby"],[data-view="game"],[data-view="finished"]) {
   border: 1px solid #ae9d77;
   box-shadow: 0 2px 12px #06140da8;
 }
-.round-table[data-count] .seat-button.self .game-avatar { border: 2px solid #bde2c7; }
-.round-table[data-count] .seat-name { min-height: 0; max-width: 100%; font-size: clamp(8px,calc(var(--table-size)*.033),13px); }
-.round-table[data-count] .seat-number { position:absolute; inset: -2px auto auto 3px; line-height:1; color:#f4d99b; font-size:clamp(9px,1.7vw,12px); }
+.round-table[data-count] .seat-button.self .game-avatar { border: 2px solid #efd095; }
+.round-table[data-count] .seat-name { min-height: 0; max-width: 100%; font-size: clamp(10px,calc(var(--table-size)*.035),14px); color:#f5ebdc; text-shadow:0 1px 3px #000,0 0 5px #000; }
+.round-table[data-count] .seat-number { background:#171619ed; padding:2px 3px; border-radius:3px; position:absolute; inset: -2px auto auto 3px; line-height:1; color:#f4d99b; font-size:clamp(9px,1.7vw,12px); }
 .round-table[data-count] .seat-flags { position:absolute; right: -2px; top: 1px; display:flex; gap:2px; max-width:60%; }
 .seat-state-dot {
   display:block;
   border: 1px solid #e0cb927b;
   border-radius: 50%;
-  background: #25382e;
+  background: #29282d;
   min-width: 13px;
   height: 13px;
   color:#fff0d2;
   text-align:center;
   font: 8px/11px system-ui,sans-serif;
 }
+.seat-state-dot[data-kind="leader"] { background:#594027; border-color:#d6ac70; }
+.seat-state-dot[data-kind="team"] { background:#273f4b; border-color:#9ebcca; }
 .seat-state-dot[data-kind="private"] { background:#484465; border-color:#b4b0e0; }
 .round-table .table-centre {
+  padding:4px; border:0; background:transparent; text-shadow:0 2px 6px #100c09,0 0 12px #080609;
   display: block;
   position: absolute;
   left: 50%; top: 50%;
@@ -296,7 +321,7 @@ body:is([data-view="lobby"],[data-view="game"],[data-view="finished"]) {
   padding: 5px 9px 7px;
   margin: 0;
 }
-.action-panel h3 { font-size: 15px; margin: 0 0 4px; }
+.action-panel h3 { font-size: 16px; margin: 0 0 4px; }
 .action-panel p { font-size: 11px; line-height:1.35; }
 .action-panel .actions-row { margin-top:0; }
 .action-panel button { padding: 5px 8px; min-height: 38px; }
@@ -328,7 +353,7 @@ body:is([data-view="lobby"],[data-view="game"],[data-view="finished"]) {
 #modal-close { position:static; flex:none; }
 #modal-body { min-height:0; padding:11px 12px; overflow:auto; overscroll-behavior:contain; }
 #modal-body:has(.handbook) { overflow:hidden; display:grid; grid-template-rows:minmax(0,1fr); }
-#modal-actions { min-height:0; margin:0; padding:7px 12px max(7px,env(safe-area-inset-bottom)); border-top:1px solid #c8a66a38; background:#17251e; }
+#modal-actions { min-height:0; margin:0; padding:7px 12px max(7px,env(safe-area-inset-bottom)); border-top:1px solid #c8a66a38; background:#1b1c21; }
 #modal-actions button { min-height:40px; }
 #modal-feedback {
   position:absolute;
@@ -338,7 +363,7 @@ body:is([data-view="lobby"],[data-view="game"],[data-view="finished"]) {
   margin:0;
   pointer-events:none;
 }
-#modal-round { display:flex; gap:7px; flex-wrap:wrap; align-items:center; padding:5px 12px; background:#283c31; }
+#modal-round { display:flex; gap:7px; flex-wrap:wrap; align-items:center; padding:5px 12px; background:#303036; }
 #modal-round > span { flex: 1; font-size:12px; }
 #modal-round button { padding:3px 8px; min-height:33px; font-size:12px; }
 .handbook-dialog #modal-round { min-height:43px; }
@@ -360,14 +385,14 @@ body[data-view="display"] #app { max-width:none; grid-row:1/-1; grid-template-ro
   align-items:center;
   min-height:0; overflow:hidden;
   gap: 3vw;
-  background: linear-gradient(90deg,#19291e95,#142018d7),url('/art/round-hall.webp') center/cover;
+  background: linear-gradient(90deg,#11131990,#15151edb),url('/art/night/round-hall.webp') center/cover;
   padding: 3dvh 5vw;
 }
 .screen-display.waiting { display:grid; text-align:center; justify-content:center; grid-template-columns:1fr; }
 .screen-table h1 { font-size: clamp(24px,5vw,104px); margin-bottom: 10px; }
 .screen-table .room-code { font-size: clamp(14px,1.4vw,36px); }
 .screen-roster { display:grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 1vw; }
-.screen-seat { position:relative; min-width:0; padding: .5vw; text-align:center; background:#1e3028c9; border:1px solid #a98f6180; border-radius:11px; }
+.screen-seat { position:relative; min-width:0; padding: .5vw; text-align:center; background:#1c1d24e3; border:1px solid #a98f6180; border-radius:11px; }
 .screen-seat.on-team { border-color:#efd18a; }
 .screen-seat strong,.screen-seat small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:clamp(9px,1.2vw,35px); }
 .screen-seat img { width:min(6vw,12dvh); min-width: 19px; max-width:100%; height:auto; border-radius:50%; }
@@ -394,11 +419,25 @@ body[data-short-viewport] .action-panel button { min-height:30px; }
 @media (max-width: 700px) {
   .site-header { gap:3px; }
   #network-state { font-size:9px; }
-  .portrait-card { --portrait-step: 28cqw; width:min(56cqw,72cqh,18rem); }
-  .front-actions { gap:3px; }
-  .front-actions button { padding-inline:5px; }
-  .front-play button { min-height:38px; font-size:13px; }
-  .front-library button,.front-more button { font-size:11px; }
+  .front-door {
+    grid-template:"intro" auto "gallery" minmax(0,1fr) "actions" auto / minmax(0,1fr);
+    gap:4px; padding:clamp(8px,2.6dvh,24px) clamp(10px,4vw,24px) 2px;
+    background:linear-gradient(180deg,#0a0c10c9,transparent 27%,#10111666 68%,#0b0d10f2 94%),
+      url('/art/night/round-hall.webp') center / cover #17181c;
+  }
+  .portrait-readout,.front-actions { width:100%; max-width:34rem; justify-self:center; }
+  .portrait-readout { text-align:center; }
+  .portrait-readout h1 { font-size:clamp(34px,6.9dvh,54px); margin:2px 0; }
+  .front-format { font-size:11px; }
+  .front-premise { margin:auto; font-size:12px; }
+  .portrait-gallery { width:100%; max-height:640px; }
+  .portrait-card { --portrait-step:21cqw; width:min(64cqw,66cqh,18rem); top:50%; }
+  .front-actions { gap:2px; }
+  .front-play button { min-height:42px; }
+  .front-library { margin-top:4px; }
+  .front-library button { flex:1; }
+  .resume-actions { justify-content:center; min-height:30px; }
+  .resume-actions button { min-height:30px; }
   #app .room-columns, #app .game-layout { grid-template-columns:minmax(0,1fr); }
   .lobby-settings-panel, #app .game-layout .side-panel { display:none; }
   .lobby-mobile-settings { display:inline-flex; }
@@ -406,7 +445,7 @@ body[data-short-viewport] .action-panel button { min-height:30px; }
   .table-shortcuts button { min-height:30px; }
   .table-shortcuts { justify-content:center; }
   .play-area { grid-template-rows:auto auto minmax(0,1fr) auto auto; }
-  .action-panel h3 { font-size:14px; }
+  .action-panel h3 { font-size:15px; }
   .action-panel p { font-size:11px; }
 }
 @media (min-width: 701px) {
@@ -417,10 +456,10 @@ body[data-short-viewport] .action-panel button { min-height:30px; }
   .site-header { min-height:39px; padding-top:3px; padding-bottom:3px; }
   .header-button { min-height:31px; }
   #app { padding-top:4px; gap:4px; }
-  .portrait-readout { min-height:0; }
+  .front-premise { display:none; }
   .portrait-readout h1 { font-size:23px; }
   .front-actions button { min-height:30px; }
-  .front-door { padding-top:4px; }
+  .front-door { padding-block:4px; gap:2px; }
   .quest-slot span { font-size:9px; }
   .quest-slot b { font-size:11px; }
   .action-panel p { visibility:hidden; height:0; overflow:hidden; }
@@ -430,7 +469,7 @@ body[data-short-viewport] .action-panel button { min-height:30px; }
   .brand-mark { display:none; }
   .header-actions { gap:2px; }
   .header-button { padding-inline:4px; min-width:30px; }
-  .front-library button,.front-more button { padding-inline:3px; }
-  .front-actions .resume-actions { min-height:28px; }
+  .front-library button { padding-inline:3px; }
+  .resume-actions { min-height:28px; }
 }
 dialog [hidden], body[data-view="display"] .site-footer { display:none !important; }

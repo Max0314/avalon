@@ -1,7 +1,7 @@
 import {playCue, preloadCue, setAudioScene} from './audio.mjs';
 import {ROLES} from '../shared/engine.mjs';
 
-const HALL = '/art/round-hall.webp';
+const HALL = '/art/night/round-hall.webp';
 const CASTLE = '/art/camelot.webp';
 const PROPS = '/art/cinematics/court-props.webp';
 
@@ -224,7 +224,7 @@ export function createSceneDirector({reading=()=>null}={}) {
       }
       if (entry.portrait) {
         const picture = node('img','cinematic-portrait');
-        picture.src = `/art/${entry.portrait}.webp`;
+        picture.src = `/art/night/${entry.portrait}.webp`;
         picture.alt = '';
         object.append(picture);
       }

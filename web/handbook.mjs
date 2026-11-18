@@ -12,7 +12,7 @@ const OPTIONAL = new Set(['percival', 'morgana', 'mordred', 'oberon']);
 const FACTIONS = {good: '好人', evil: '邪恶'};
 
 export function roleArt(roleId) {
-  return Object.hasOwn(ROLES, roleId) ? `/art/${roleId}.webp` : null;
+  return Object.hasOwn(ROLES, roleId) ? `/art/night/${roleId}.webp` : null;
 }
 
 function roleType(id) {
@@ -67,7 +67,8 @@ function roleGallery(faction, settings) {
         const enabled = OPTIONAL.has(id) && typeof settings?.[id] === 'boolean' ? ` data-enabled="${settings[id]}"` : '';
         return `<button type="button" class="handbook-role-button" data-role="${id}"${enabled} aria-controls="handbook-role-detail">
         <span class="handbook-thumb"><img src="${roleArt(id)}" alt="" width="384" height="512" loading="lazy" decoding="async" draggable="false"></span>
-        <span class="handbook-role-label">${role.name}</span>
+        <span class="handbook-role-copy"><strong class="handbook-role-label">${role.name}</strong>
+          <span class="handbook-role-summary">${role.description}</span></span>
       </button>`;
       }).join('')}
     </div>
