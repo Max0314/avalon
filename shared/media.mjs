@@ -19,6 +19,7 @@ export const portraitPaths = [...previousPortraits, ...Object.values(rolePortrai
 export const sceneArt = [
   '/art/night/round-hall.webp', '/art/court/hall-day.webp', '/art/court/gate-day.webp', '/art/court/gate-night.webp',
   '/art/council-table.webp', '/art/cinematics/court-props.webp',
+  '/art/court/entry-create.webp', '/art/court/entry-join.webp',
 ];
 export const musicPaths = Object.values(MUSIC_ASSETS);
 export const effectPaths = Object.values(CINEMATIC_AUDIO);

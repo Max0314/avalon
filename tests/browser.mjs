@@ -39,7 +39,12 @@ async function fixedViewport(page){
 }
 async function snapshot(page){return page.evaluate(async()=>{const s=await(await fetch('/api/session')).json();return s.room;});}
 async function phase(page,text){await page.locator('.phase-heading h2').filter({hasText:text}).waitFor();}
-async function reveal(p){await p.locator('#peek-role').first().click();const role=await p.locator('.role-name').textContent();await p.locator('#hold-role').focus();await p.keyboard.down(' ');await p.waitForTimeout(300);await p.keyboard.up(' ');await click(p,'confirm-role');return role;}
+async function reveal(p){
+  await p.locator('#peek-role').first().click();
+  const role=await p.locator('.identity-details .role-name').textContent();
+  await click(p,'confirm-role');
+  return role;
+}
 async function qr(page,id){return page.locator('#'+id).evaluate(canvas=>{const c=canvas.getContext('2d');return {width:canvas.width,height:canvas.height,data:Array.from(c.getImageData(0,0,canvas.width,canvas.height).data)};});}
 async function pair(host,guest,{retry=false}={}){
   await click(host,'pair-host');await host.locator('#offer-text').waitFor({state:'attached'});
@@ -75,6 +80,14 @@ try{
   await mobile.mouse.up();
   assert.equal(await mobile.locator('[data-portrait-count]').textContent(),'2 — 8');
   await click(mobile,'join-online');
+  await mobile.locator('#nickname').fill('保留的昵称');
+  await mobile.locator('#join-code').fill('A0B1C2D3E4');
+  await mobile.locator('[data-entry-mode="create"]').click();
+  assert.equal(await mobile.locator('#nickname').inputValue(),'保留的昵称');
+  assert.equal(await mobile.locator('#join-code').count(),0);
+  await mobile.locator('[data-entry-mode="join"]').click();
+  assert.equal(await mobile.locator('#join-code').inputValue(),'A0B1C2D3E4');
+  assert.equal(await mobile.locator('#nickname').inputValue(),'保留的昵称');
   await mobile.setViewportSize({width:390,height:406});
   await fixedViewport(mobile);
   const submit=await mobile.locator('#submit-online').boundingBox();
@@ -129,7 +142,16 @@ try{
   assert.equal(await pages[0].locator('body').getAttribute('data-lighting'),'night','随对局时身份确认使用夜景');
   await pages[0].screenshot({path:'test-results/desktop-reveal.png',fullPage:true});
   const before=await snapshot(pages[0]);assert(!('roles'in before.game));assert(!('questCards'in before.game));
-  await pages[0].locator('#peek-role').first().click();await click(pages[0],'modal-close');assert.equal((await snapshot(pages[0])).game.phase,'reveal');
+  const first=pages[0];
+  assert.equal(await first.locator('.identity-details').count(),0,'牌桌不渲染未打开的身份');
+  await first.locator('#peek-role').first().click();
+  assert(await first.locator('.identity-details').isVisible(),'单击直接显示身份');
+  await click(first,'cover-identity');
+  assert.equal(await first.locator('.identity-details').count(),0,'盖住后移除身份内容');
+  await first.locator('#peek-role').first().click();
+  await first.evaluate(()=>window.dispatchEvent(new Event('blur')));
+  assert.equal(await first.locator('.identity-details').count(),0,'失焦后移除身份内容');
+  assert.equal((await snapshot(first)).game.phase,'reveal');
   for(const p of pages)await reveal(p);
   const views=await Promise.all(pages.map(snapshot));const ids=views.map(v=>v.me),good=views.filter(v=>['merlin','percival','servant'].includes(v.game.myRole)).map(v=>v.me);
   await fixedViewport(mobile);
@@ -208,12 +230,18 @@ try{
     const legacyArt=await fetch('/art/merlin.webp');
     const variant=await fetch('/art/court/servant-4.webp');
     const day=await fetch('/art/court/hall-day.webp');
+    const entrance=await fetch('/art/court/entry-join.webp');
+    const turn=await fetch('/audio/cinematics/handbook-turn-1.mp3',{headers:{Range:'bytes=0-31'}});
     const music=await fetch('/audio/hall.mp3',{headers:{Range:'bytes=0-31'}});
-    return [art.status,table.status,legacyArt.status,variant.status,day.status,music.status,(await music.arrayBuffer()).byteLength];
+    return [art.status,table.status,legacyArt.status,variant.status,day.status,entrance.status,turn.status,music.status,(await music.arrayBuffer()).byteLength];
   });
-  assert.deepEqual(cachedMedia,[200,200,200,200,200,206,32]);
+  assert.deepEqual(cachedMedia,[200,200,200,200,200,200,206,206,32]);
   await cached.goto(base+'/?preview=effects');
   await cached.getByRole('heading',{name:'视听体验'}).waitFor();
+  await cached.locator('[data-experience-group="cue"]').click();
+  assert.equal(await cached.locator('#experience-label').textContent(),'手册翻页');
+  assert.equal(await cached.locator('[data-experience-item="handbook-turn-1"]').getAttribute('aria-pressed'),'true');
+  await cached.locator('[data-experience-group="scene"]').click();
   await cached.locator('[data-experience-item="lady"]').click();
   await cached.locator('#experience-sound').uncheck();
   await click(cached,'experience-play');

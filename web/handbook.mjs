@@ -1,5 +1,6 @@
 import {EVIL, ROLES, SIZES} from '../shared/engine.mjs';
 import {ladyArt,roleArt,rolePortraits} from '../shared/media.mjs';
+import {commitsTurn, dragGrip, drawTurn, settleDuration, settleGrip} from './handbook-turn.mjs';
 
 const SECTIONS = {rules: '玩法', roles: '角色图鉴', quests: '任务人数'};
 const PAGES = [
@@ -63,7 +64,7 @@ function rules() {
 }
 
 function roleGallery(faction, settings) {
-  return `<div class="handbook-gallery" data-faction="${faction}"${faction === 'evil' ? ' hidden' : ''}>
+  return `<div class="handbook-gallery" data-faction="${faction}">
     <div class="handbook-factions" role="group" aria-label="角色阵营">
       ${Object.entries(FACTIONS).map(([side, label]) => `<button type="button" data-faction-page="${side}" aria-pressed="${faction === side}">${label}</button>`).join('')}
     </div>
@@ -111,13 +112,15 @@ export function handbookMarkup({players, settings, section = 'rules'} = {}) {
   const firstPage = PAGES.find(page => page.section === selected);
   const sections = {
     rules: rules(),
-    roles: roleGallery('good', settings) + roleGallery('evil', settings),
+    good: roleGallery('good', settings),
+    evil: roleGallery('evil', settings),
     quests: questGuide(seated ? players : COUNTS[0], seated),
   };
   return `<div id="handbook" class="handbook">
     <div class="handbook-tabs" role="tablist" aria-label="手册章节">${Object.entries(SECTIONS).map(([id, label]) => `<button type="button" role="tab" id="handbook-tab-${id}" data-section="${id}" aria-controls="handbook-pane-${id}" aria-selected="${selected === id}" tabindex="${selected === id ? 0 : -1}">${label}</button>`).join('')}</div>
     <div class="handbook-deck">
-      ${Object.entries(sections).map(([id, body]) => `<section class="handbook-pane" id="handbook-pane-${id}" role="tabpanel" aria-labelledby="handbook-tab-${id}" tabindex="0"${selected === id ? '' : ' hidden'}>${body}</section>`).join('')}
+      ${PAGES.map(({id, section}) => `<section class="handbook-pane" id="handbook-pane-${id === 'good' ? 'roles' : id}" data-book-page="${id}" role="tabpanel" aria-labelledby="handbook-tab-${section}" tabindex="0"${firstPage.id === id ? '' : ' hidden'}>${sections[id]}</section>`).join('')}
+      <canvas class="handbook-curl" aria-hidden="true" hidden></canvas>
       <div id="handbook-role-detail" class="handbook-role-detail" role="region" aria-label="角色详情" hidden>
         <div class="handbook-detail-sheet">
           <div class="handbook-detail-heading"><button type="button" data-role-back>‹ 返回角色表</button></div>
@@ -137,80 +140,36 @@ function setPressed(buttons, selected) {
   for (const button of buttons) button.setAttribute('aria-pressed', String(button === selected));
 }
 
-function bindPageDrag(deck, enabled, turn, available) {
-  let pointer;
-  let blockClickUntil = 0;
-
-  deck.addEventListener('pointerdown', event => {
-    if (!enabled() || !event.isPrimary || event.button !== 0) return;
-    blockClickUntil = 0;
-    pointer = {id: event.pointerId, x: event.clientX, y: event.clientY, axis: null};
-  });
-
-  deck.addEventListener('pointermove', event => {
-    if (!pointer || event.pointerId !== pointer.id) return;
-    const dx = event.clientX - pointer.x;
-    const dy = event.clientY - pointer.y;
-    if (!pointer.axis && Math.max(Math.abs(dx), Math.abs(dy)) >= 10) {
-      pointer.axis = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'x' : 'y';
-      if (pointer.axis === 'x' && event.isTrusted) deck.setPointerCapture(event.pointerId);
-    }
-    if (pointer.axis !== 'x') return;
-    const area = deck.getBoundingClientRect();
-    const step = dx > 0 ? -1 : 1;
-    const fold = Math.min(.94, Math.abs(dx) / Math.max(1, area.width));
-    const contact = Math.max(0, Math.min(1, (event.clientY - area.top) / Math.max(1, area.height)));
-    deck.dataset.drag = step < 0 ? 'prev' : 'next';
-    deck.style.setProperty('--fold', fold * (available(step) ? 1 : .22));
-    deck.style.setProperty('--contact', `${Math.round(100 * contact)}%`);
-  });
-
-  function finish(event) {
-    if (!pointer || event.pointerId !== pointer.id) return;
-    // Moving implicit touch capture from a child to the deck ends only the child's capture.
-    if (event.type === 'lostpointercapture' && event.target !== deck) return;
-    if (event.type === 'pointerleave' && deck.hasPointerCapture(event.pointerId)) return;
-    const dx = event.clientX - pointer.x;
-    const horizontal = pointer.axis === 'x';
-    pointer = undefined;
-    delete deck.dataset.drag;
-    deck.style.removeProperty('--fold');
-    deck.style.removeProperty('--contact');
-    if (!horizontal) return;
-    blockClickUntil = performance.now() + 220;
-    if (event.type === 'pointerup' && Math.abs(dx) >= Math.min(88, deck.clientWidth * .23)) turn(dx > 0 ? -1 : 1);
-  }
-
-  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture', 'pointerleave']) {
-    deck.addEventListener(type, finish);
-  }
-  return event => deck.contains(event.target) && event.detail > 0 && performance.now() < blockClickUntil;
-}
-
-export function mountHandbook(root, {onTurn = () => {}} = {}) {
+export function mountHandbook(root, {onPrepare = () => {}, onLift = () => {}, onTurn = () => {}, onSelect = () => {}} = {}) {
   const tabs = [...root.querySelectorAll('[data-section]')];
   const roles = [...root.querySelectorAll('[data-role]')];
   const counts = [...root.querySelectorAll('[data-count]')];
-  const panels = tabs.map(tab => root.querySelector(`#${tab.getAttribute('aria-controls')}`));
-  const galleries = [...root.querySelectorAll('.handbook-gallery')];
+  const panels = [...root.querySelectorAll('[data-book-page]')];
   const detail = root.querySelector('#handbook-role-detail');
   const detailContent = detail.querySelector('.handbook-detail-content');
+  const detailSheet = detail.querySelector('.handbook-detail-sheet');
   const detailBack = detail.querySelector('[data-role-back]');
   const questPanel = root.querySelector('#handbook-quest-detail');
   const deck = root.querySelector('.handbook-deck');
+  const canvas = deck.querySelector('.handbook-curl');
   const prev = root.querySelector('[data-book-step="-1"]');
   const next = root.querySelector('[data-book-step="1"]');
   const pageName = root.querySelector('.handbook-page-name');
   const dialog = root.closest('dialog');
-  const positions = Object.fromEntries(PAGES.map(page => [page.id, 0]));
-  const initialSection = tabs.find(tab => tab.getAttribute('aria-selected') === 'true').dataset.section;
-  let pageIndex = PAGES.findIndex(page => page.section === initialSection);
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const positions = PAGES.map(() => 0);
+  const warmed = new Set();
+  const closeEvents = new AbortController();
+  let pageIndex = panels.findIndex(panel => !panel.hidden);
   let lastFaction = 'good';
   let roleButton;
-
-  function activePanel() {
-    return panels.find(panel => !panel.hidden);
-  }
+  let turn;
+  let pointer;
+  let frame;
+  let queued;
+  let blockClickUntil = 0;
+  let turnSequence = 0;
+  let liftSequence = 0;
 
   function paginate() {
     prev.disabled = pageIndex === 0 || !detail.hidden;
@@ -220,67 +179,199 @@ export function mountHandbook(root, {onTurn = () => {}} = {}) {
   function back(focus = true) {
     if (detail.hidden) return false;
     detail.hidden = true;
-    for (const panel of panels) panel.inert = false;
+    panels[pageIndex].inert = false;
     tabs.forEach(tab => tab.disabled = false);
     paginate();
     if (focus) {
       roleButton?.focus({preventScroll: true});
-      onTurn();
+      onSelect('close');
     }
     roleButton = undefined;
     return true;
   }
 
-  function animatePage(leaf, direction = 1) {
-    if (!leaf.animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    leaf.getAnimations?.().forEach(animation => animation.cancel());
-    leaf.animate([
-      {transform: `perspective(900px) translateX(${direction * 2.2}%) rotateY(${direction * 8}deg)`, filter: 'brightness(.86)'},
-      {transform: 'none', filter: 'none'},
-    ], {duration: 240, easing: 'cubic-bezier(.2,.68,.25,1)'});
+  function warmNeighbors() {
+    const neighbors = panels.slice(Math.max(0, pageIndex - 1), pageIndex + 2);
+    function warm() {
+      if (!root.isConnected) return;
+      for (const panel of neighbors) {
+        for (const image of panel.querySelectorAll('.handbook-thumb img')) {
+          if (warmed.has(image.src)) continue;
+          warmed.add(image.src);
+          const preload = new Image();
+          preload.src = image.src;
+          void preload.decode().catch(() => warmed.delete(image.src));
+        }
+      }
+    }
+    if (window.requestIdleCallback) window.requestIdleCallback(warm, {timeout: 150});
+    else window.setTimeout(warm, 60);
   }
 
-  function turnTo(requested, {sound = true, motion = true} = {}) {
-    if (!PAGES[requested] || requested === pageIndex) return false;
+  function showPage(requested) {
+    if (!panels[requested] || requested === pageIndex) return;
     back(false);
-    const current = PAGES[pageIndex];
-    positions[current.id] = activePanel().scrollTop;
-    const direction = Math.sign(requested - pageIndex);
+    positions[pageIndex] = panels[pageIndex].scrollTop;
+    panels[pageIndex].hidden = true;
     pageIndex = requested;
     const page = PAGES[pageIndex];
+    const panel = panels[pageIndex];
     if (page.section === 'roles') lastFaction = page.id;
-    for (const [index, tab] of tabs.entries()) {
+    for (const tab of tabs) {
       const selected = tab.dataset.section === page.section;
       tab.setAttribute('aria-selected', String(selected));
       tab.tabIndex = selected ? 0 : -1;
-      panels[index].hidden = !selected;
+      if (selected) tab.setAttribute('aria-controls', panel.id);
     }
-    galleries.forEach(gallery => gallery.hidden = gallery.dataset.faction !== lastFaction);
-    const entering = activePanel();
-    entering.scrollTop = positions[page.id];
+    panel.hidden = false;
+    panel.scrollTop = positions[pageIndex];
     pageName.textContent = page.name;
     paginate();
-    if (motion) animatePage(entering, direction);
-    if (sound) onTurn();
+    warmNeighbors();
+  }
+
+  function paintTurn() {
+    drawTurn(panels[pageIndex], canvas, turn);
+    canvas.hidden = turn.reduced;
+  }
+
+  function beginTurn(requested, corner) {
+    const width = deck.clientWidth;
+    const height = deck.clientHeight;
+    if (!width || !height) return false;
+    turn = {
+      to: requested, direction: Math.sign(requested - pageIndex), width, height, corner,
+      grip: {progress: 0, x: 1, y: corner === 'top' ? 0 : 1},
+      reduced: reducedMotion.matches, focusOrigin: document.activeElement, completing: false,
+    };
+    const outgoing = panels[pageIndex];
+    const incoming = panels[requested];
+    incoming.inert = true;
+    incoming.setAttribute('aria-hidden', 'true');
+    incoming.hidden = false;
+    incoming.scrollTop = positions[requested];
+    outgoing.classList.add('handbook-turn-outgoing');
+    deck.dataset.turnCorner = corner;
+    return true;
+  }
+
+  function finishTurn(complete, refocus = true) {
+    if (!turn) return;
+    cancelAnimationFrame(frame);
+    const {to, focusAfter, focusOrigin} = turn;
+    turn = undefined;
+    const outgoing = panels[pageIndex];
+    const incoming = panels[to];
+    const containedFocus = outgoing.contains(document.activeElement) || outgoing.contains(focusOrigin);
+    incoming.hidden = !complete;
+    incoming.inert = false;
+    incoming.removeAttribute('aria-hidden');
+    outgoing.classList.remove('handbook-turn-outgoing');
+    outgoing.style.removeProperty('clip-path');
+    outgoing.style.removeProperty('opacity');
+    canvas.hidden = true;
+    delete deck.dataset.drag;
+    delete deck.dataset.turnCorner;
+    if (complete) {
+      showPage(to);
+      if (refocus && root.isConnected) {
+        if (focusAfter) focusAfter();
+        else if (containedFocus && document.activeElement === document.body) panels[pageIndex].focus({preventScroll: true});
+      }
+    }
+  }
+
+  function cancelTurn() {
+    const id = pointer?.id;
+    if (pointer?.axis === 'horizontal') blockClickUntil = performance.now() + 500;
+    pointer = undefined;
+    queued = undefined;
+    if (id !== undefined && deck.hasPointerCapture(id)) deck.releasePointerCapture(id);
+    finishTurn(false, false);
+    delete deck.dataset.drag;
+    deck.style.removeProperty('--handbook-edge');
+  }
+
+  function settle(complete, button = false) {
+    turn.completing = true;
+    const initial = turn.grip;
+    const {corner, reduced} = turn;
+    const start = performance.now();
+    const duration = settleDuration(initial.progress, complete, button, reduced);
+    let played = false;
+    function tick(now) {
+      if (!root.isConnected || (dialog && !dialog.open)) {
+        cancelTurn();
+        return;
+      }
+      const time = Math.max(0, Math.min(1, (now - start) / duration));
+      turn.grip = settleGrip(initial, time, corner, complete, button);
+      if (complete && !played && turn.grip.progress >= .35) {
+        played = true;
+        onTurn(1 + turnSequence++ % 4);
+      }
+      paintTurn();
+      if (time < 1) {
+        frame = requestAnimationFrame(tick);
+      } else {
+        finishTurn(complete);
+        const pending = queued;
+        queued = undefined;
+        if (pending) turnTo(pending.page, pending.focus);
+      }
+    }
+    frame = requestAnimationFrame(tick);
+  }
+
+  function turnTo(requested, focusAfter) {
+    if (!panels[requested] || !detail.hidden) return false;
+    if (turn?.completing) {
+      queued = requested === turn.to ? undefined : {page: requested, focus: focusAfter};
+      return true;
+    }
+    if (turn) cancelTurn();
+    if (pageIndex === requested) return false;
+    if (!beginTurn(requested, 'bottom')) {
+      showPage(requested);
+      onTurn(1 + turnSequence++ % 4);
+      focusAfter?.();
+      return true;
+    }
+    turn.focusAfter = focusAfter;
+    settle(true, true);
     return true;
   }
 
   function openRole(id, {sound = true, motion = true} = {}) {
     const button = roles.find(card => card.dataset.role === id);
     if (!button) return false;
-    turnTo(PAGES.findIndex(page => page.id === ROLES[id].side), {sound: false, motion: false});
+    cancelTurn();
+    showPage(PAGES.findIndex(page => page.id === ROLES[id].side));
     roleButton = button;
     const {enabled} = button.dataset;
     detailContent.innerHTML = roleDetail(id, enabled === undefined ? undefined : enabled === 'true');
     detail.hidden = false;
     detailContent.scrollTop = 0;
-    for (const panel of panels) panel.inert = true;
+    panels[pageIndex].inert = true;
     tabs.forEach(tab => tab.disabled = true);
     paginate();
     detailBack.focus({preventScroll: true});
-    if (motion) animatePage(detail.querySelector('.handbook-detail-sheet'));
-    if (sound) onTurn();
+    if (motion && !reducedMotion.matches) {
+      detailSheet.getAnimations?.().forEach(animation => animation.cancel());
+      detailSheet.animate?.([
+        {opacity: .65, transform: 'translateY(5px)'},
+        {opacity: 1, transform: 'translateY(0)'},
+      ], {duration: 170, easing: 'ease-out'});
+    }
+    if (sound) onSelect('open');
     return true;
+  }
+
+  function choosePortrait(button) {
+    if (!button || button.getAttribute('aria-pressed') === 'true') return;
+    const portrait = detail.querySelector('.handbook-portrait img');
+    portrait.src = roleArt(roleButton.dataset.role, Number(button.dataset.portraitVariant));
+    setPressed(detail.querySelectorAll('[data-portrait-variant]'), button);
   }
 
   function chooseCount(button) {
@@ -294,10 +385,90 @@ export function mountHandbook(root, {onTurn = () => {}} = {}) {
     turnTo(PAGES.findIndex(page => page.id === id));
   }
 
-  const wasDrag = bindPageDrag(deck, () => detail.hidden, step => turnTo(pageIndex + step),
-    step => Boolean(PAGES[pageIndex + step]));
+  deck.addEventListener('pointerdown', event => {
+    if (event.isPrimary === false) {
+      if (pointer) cancelTurn();
+      return;
+    }
+    if (turn || !detail.hidden || event.button !== 0) return;
+    blockClickUntil = 0;
+    if (event.target.closest('button:not([data-role]), a, input, summary')) return;
+    const box = deck.getBoundingClientRect();
+    pointer = {
+      id: event.pointerId, x: event.clientX, y: event.clientY, lastX: event.clientX,
+      lastAt: performance.now(), velocity: 0, axis: 'pending', direction: 0,
+      corner: event.clientY - box.top < box.height / 2 ? 'top' : 'bottom',
+    };
+  });
+
+  deck.addEventListener('pointermove', event => {
+    if (!pointer || pointer.id !== event.pointerId) return;
+    const dx = event.clientX - pointer.x;
+    const dy = event.clientY - pointer.y;
+    const now = performance.now();
+    pointer.velocity = (event.clientX - pointer.lastX) / Math.max(1, now - pointer.lastAt);
+    pointer.lastX = event.clientX;
+    pointer.lastAt = now;
+    if (pointer.axis === 'pending' && Math.max(Math.abs(dx), Math.abs(dy)) >= 10) {
+      if (Math.abs(dx) > Math.abs(dy) * 1.3) {
+        pointer.axis = 'horizontal';
+        pointer.direction = dx < 0 ? 1 : -1;
+        const requested = pageIndex + pointer.direction;
+        if (event.isTrusted) deck.setPointerCapture(event.pointerId);
+        deck.dataset.drag = pointer.direction > 0 ? 'next' : 'prev';
+        if (panels[requested] && beginTurn(requested, pointer.corner)) onLift(1 + liftSequence++ % 2);
+      } else if (Math.abs(dy) > Math.abs(dx) * 1.3) {
+        pointer.axis = 'vertical';
+      }
+    }
+    if (pointer.axis !== 'horizontal') return;
+    event.preventDefault();
+    if (turn) {
+      turn.grip = dragGrip(dx, dy, turn.width, turn.height, turn.direction, turn.corner);
+      paintTurn();
+    } else if (!reducedMotion.matches) {
+      deck.style.setProperty('--handbook-edge', Math.max(-6, Math.min(6, dx * .04)) + 'px');
+    }
+  });
+
+  function finishPointer(event) {
+    if (!pointer || pointer.id !== event.pointerId) return;
+    // Implicit touch capture moves from the original child to the deck.
+    if (event.type === 'lostpointercapture' && event.target !== deck) return;
+    if (event.type === 'pointerleave' && deck.hasPointerCapture(event.pointerId)) return;
+    const gesture = pointer;
+    pointer = undefined;
+    if (deck.hasPointerCapture(event.pointerId)) deck.releasePointerCapture(event.pointerId);
+    if (gesture.axis !== 'horizontal') return;
+    blockClickUntil = performance.now() + 500;
+    if (!turn) {
+      delete deck.dataset.drag;
+      deck.style.removeProperty('--handbook-edge');
+      return;
+    }
+    const dx = event.clientX - gesture.x;
+    const velocity = performance.now() - gesture.lastAt > 100 ? 0 : gesture.velocity;
+    const complete = event.type === 'pointerup' && commitsTurn(turn.grip.progress, dx, velocity, gesture.direction);
+    settle(complete);
+  }
+
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture', 'pointerleave']) {
+    deck.addEventListener(type, finishPointer);
+  }
+
+  function stepPage(step, button) {
+    const current = queued?.page ?? turn?.to ?? pageIndex;
+    turnTo(current + step, button ? () => {
+      if (button.disabled && (document.activeElement === button || document.activeElement === document.body)) {
+        (button === prev ? next : prev).focus({preventScroll: true});
+      }
+    } : undefined);
+  }
+
+  root.addEventListener('pointerdown', onPrepare, {capture: true});
+  root.addEventListener('click', onPrepare, {capture: true});
   root.addEventListener('click', event => {
-    if (wasDrag(event)) {
+    if (deck.contains(event.target) && event.detail !== 0 && performance.now() < blockClickUntil) {
       event.preventDefault();
       return;
     }
@@ -310,73 +481,99 @@ export function mountHandbook(root, {onTurn = () => {}} = {}) {
     if (button.dataset.section) {
       selectTab(button);
     } else if (button.dataset.bookStep) {
-      const changed = turnTo(pageIndex + Number(button.dataset.bookStep));
-      if (changed && button.disabled) (button === prev ? next : prev).focus();
+      stepPage(Number(button.dataset.bookStep), button);
     } else if (button.dataset.factionPage) {
       const side = button.dataset.factionPage;
-      if (turnTo(PAGES.findIndex(page => page.id === side))) {
-        activePanel().querySelector(`.handbook-gallery[data-faction="${side}"] [data-faction-page="${side}"]`).focus({preventScroll: true});
-      }
-    } else if (button.dataset.role) {
+      turnTo(PAGES.findIndex(page => page.id === side), () => {
+        if (document.activeElement === button || document.activeElement === document.body) {
+          panels[pageIndex].querySelector('[data-faction-page="' + side + '"]').focus({preventScroll: true});
+        }
+      });
+    } else if (!turn && button.dataset.role) {
       openRole(button.dataset.role);
     } else if (button.hasAttribute('data-role-back')) {
       back();
     } else if (button.hasAttribute('data-portrait-variant')) {
-      const portrait = detail.querySelector('.handbook-portrait img');
-      portrait.src = roleArt(roleButton.dataset.role, Number(button.dataset.portraitVariant));
-      setPressed([...detail.querySelectorAll('[data-portrait-variant]')], button);
-    } else if (button.dataset.count) {
+      choosePortrait(button);
+    } else if (!turn && button.dataset.count) {
       chooseCount(button);
     }
   });
 
   root.addEventListener('keydown', event => {
+    const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+    if ([...keys, 'Enter', ' '].includes(event.key)) onPrepare(event);
+    if (!detail.hidden || !keys.includes(event.key)) return;
     const current = tabs.indexOf(event.target);
-    if (current < 0) return;
-    const neighbors = {ArrowLeft: (current + tabs.length - 1) % tabs.length, ArrowRight: (current + 1) % tabs.length, Home: 0, End: tabs.length - 1};
-    if (!Object.hasOwn(neighbors, event.key)) return;
-    event.preventDefault();
-    const selected = tabs[neighbors[event.key]];
-    selectTab(selected);
-    selected.focus();
+    if (current >= 0) {
+      const neighbors = {
+        ArrowLeft: (current + tabs.length - 1) % tabs.length,
+        ArrowRight: (current + 1) % tabs.length,
+        Home: 0, End: tabs.length - 1,
+      };
+      event.preventDefault();
+      const selected = tabs[neighbors[event.key]];
+      selectTab(selected);
+      selected.focus({preventScroll: true});
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault();
+      stepPage(event.key === 'ArrowLeft' ? -1 : 1,
+        event.target === prev || event.target === next ? event.target : undefined);
+    }
   });
 
   // Escape returns to the current role grid before closing the native dialog.
   if (dialog) {
-    const events = new AbortController();
+    const options = {signal: closeEvents.signal};
     dialog.addEventListener('cancel', event => {
       if (root.isConnected && back()) event.preventDefault();
-    }, {signal: events.signal});
+    }, options);
     dialog.addEventListener('close', () => {
-      if (!root.isConnected || !dialog.open) events.abort();
-    }, {signal: events.signal});
+      if (root.isConnected && dialog.open) return;
+      cancelTurn();
+      resize.disconnect();
+      closeEvents.abort();
+    }, options);
   }
+  const resize = new ResizeObserver(() => {
+    if (!turn || !deck.clientWidth || !deck.clientHeight) return;
+    turn.width = deck.clientWidth;
+    turn.height = deck.clientHeight;
+    paintTurn();
+  });
+  resize.observe(deck);
 
   function bookmark() {
-    const page = PAGES[pageIndex];
     return {
-      page: page.id,
+      page: PAGES[pageIndex].id,
       lastFaction,
       count: root.querySelector('[data-count][aria-pressed="true"]')?.dataset.count,
       notes: Array.from(root.querySelectorAll('details[data-note][open]'), note => note.dataset.note),
-      positions: {...positions, [page.id]: activePanel().scrollTop},
+      positions: Object.fromEntries(PAGES.map(({id}, index) =>
+        [id, index === pageIndex ? panels[index].scrollTop : positions[index]])),
       role: roleButton?.dataset.role,
+      variant: detail.querySelector('[data-portrait-variant][aria-pressed="true"]')?.dataset.portraitVariant,
       detail: detailContent.scrollTop,
     };
   }
 
   function restore(saved) {
     if (!saved) return;
+    cancelTurn();
     chooseCount(counts.find(button => button.dataset.count === saved.count));
-    turnTo(PAGES.findIndex(page => page.id === saved.page), {sound: false, motion: false});
+    showPage(PAGES.findIndex(page => page.id === saved.page));
     if (Object.hasOwn(FACTIONS, saved.lastFaction)) lastFaction = saved.lastFaction;
-    Object.assign(positions, saved.positions);
-    if (saved.role) openRole(saved.role, {sound: false, motion: false});
+    for (const [index, {id}] of PAGES.entries()) positions[index] = saved.positions?.[id] ?? 0;
+    if (saved.role) {
+      openRole(saved.role, {sound: false, motion: false});
+      choosePortrait([...detail.querySelectorAll('[data-portrait-variant]')]
+        .find(button => button.dataset.portraitVariant === saved.variant));
+    }
     for (const note of root.querySelectorAll('details[data-note]')) note.open = saved.notes?.includes(note.dataset.note) ?? false;
-    activePanel().scrollTop = positions[PAGES[pageIndex].id] ?? 0;
+    panels[pageIndex].scrollTop = positions[pageIndex];
     if (saved.role) detailContent.scrollTop = saved.detail ?? 0;
   }
 
-  galleries.forEach(gallery => gallery.hidden = gallery.dataset.faction !== lastFaction);
+  warmNeighbors();
   return {openRole, back, bookmark, restore};
 }

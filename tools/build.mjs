@@ -7,7 +7,7 @@ import {coverArt,musicPaths,effectPaths,portraitPaths,sceneArt,previousMediaPath
 import {avatarAssetPaths} from '../shared/fribench-game-kit/avatars.mjs';
 await mkdir('.dist',{recursive:true});
 await build({entryPoints:['web/app.mjs'],bundle:true,format:'esm',target:['es2022'],outfile:'.dist/app.js',minify:true,legalComments:'eof'});
-let styles=(await Promise.all(['web/styles.css','shared/fribench-game-kit/journal.css','web/handbook.css','web/round-table.css','web/cinematics.css','web/viewport.css','web/experience.css'].map(file=>readFile(file,'utf8')))).join('\n');
+let styles=(await Promise.all(['web/styles.css','shared/fribench-game-kit/journal.css','web/handbook.css','web/round-table.css','web/cinematics.css','web/viewport.css','web/experience.css','web/court-interface.css'].map(file=>readFile(file,'utf8')))).join('\n');
 for(let count=5;count<=10;count++)for(let i=0;i<count;i++){
   const angle=-Math.PI/2+2*Math.PI*i/count;
   styles+=`\n.round-table[data-count="${count}"] .seat:nth-of-type(${i+2}){left:${(50+37*Math.cos(angle)).toFixed(3)}%;top:${(50+37*Math.sin(angle)).toFixed(3)}%;}`;

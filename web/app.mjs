@@ -271,18 +271,21 @@ function renderHome(){
   }
   const reserved=Boolean(view&&!view.closed);
   $('resume-current').hidden=!reserved;
-  $('close-own-room').hidden=!reserved;
+  $('create-online').hidden=reserved;
   $('create-online').disabled=busy||Boolean(connecting);
   $('join-online').disabled=busy||Boolean(connecting);
 }
 
 function offlineMenu(){
   const saved=OfflineHost.saved();
-  dialog('离线同桌',`<div class="stack-actions">
-    <button id="create-offline">创建离线房间</button><button id="join-offline">扫码加入</button>
-    ${saved?'<button id="restore-offline">恢复本机牌桌</button>':''}
-    <button id="practice-menu">人机练习</button><button id="prepare-offline">准备离线素材</button><button id="home-offline-records">本机离线记录</button>
-  </div>`);
+  dialog('离线同桌',`<div class="offline-entrance">
+    ${saved?'<button id="restore-offline" class="primary full">恢复本机牌桌</button>':''}
+    <div class="offline-choices">
+      <button id="create-offline" data-emblem="table">创建离线房间</button>
+      <button id="join-offline" data-emblem="gate">扫码加入</button>
+    </div>
+    <div class="offline-tools"><button id="practice-menu">人机练习</button><button id="prepare-offline">准备离线素材</button><button id="home-offline-records">本机离线记录</button></div>
+  </div>`,'offline-dialog');
 }
 
 function accountMenu(check=true){
@@ -336,8 +339,7 @@ function roomTop(){
     <div><span class="mode-label">${mode}</span><h1>${view.game?'卡美洛圆桌':'房间大厅'}</h1><span class="room-code">${esc(view.code||'练习牌桌')}</span></div>
     <div class="room-tools">
       ${transport.kind==='online'?'<button id="invite">邀请</button>':transport.kind==='offline-host'?'<button id="pair-host">配对</button>':transport.kind==='offline-guest'?`<button id="retry-offline"${networkState==='terminal'?'':' hidden'}>重新扫码</button>`:''}
-      <button id="public-screen">大屏</button>
-      <button id="go-home">首页</button><button id="room-menu">菜单</button>
+      <button id="public-screen">大屏</button><button id="room-menu">菜单</button>
     </div></section>`;
 }
 
@@ -396,7 +398,7 @@ function actionPanel(){
       const confirmed=g.confirmed.includes(view.me);
       title=confirmed?'已确认身份':'查看你的身份';
       summary=`${g.confirmed.length} / ${view.players.length} 人已确认`;
-      controls='<button id="peek-role" class="primary">打开身份卡</button>';break;
+      controls='<button id="peek-role" class="primary">查看身份</button>';break;
     }
     case 'nominate': {
       const mine=g.leaderId===view.me;
@@ -489,9 +491,8 @@ function renderGame(){
     <div class="quest-track" aria-label="任务进度">${track}</div>
     <div class="phase-heading"><h2>${LABEL[g.phase]}</h2><div class="rejection-track"><span>连拒 ${g.rejections}/5</span>${Array.from({length:5},(_,i)=>`<i class="pip ${i<g.rejections?'on':''}" aria-hidden="true"></i>`).join('')}</div></div>
     ${tableMarkup()}${actionPanel()}
-    <div class="table-shortcuts"><button id="public-history">记录</button><button id="guide-game">手册</button>${g.privateIntel.length?'<button id="private-intel">我的查验</button>':''}</div>
+    <div class="table-shortcuts"><button id="public-history">记录</button>${g.privateIntel.length?'<button id="private-intel">我的查验</button>':''}</div>
   </section><aside class="side-panel">
-    <button id="guide-game-desktop" class="full">圆桌手册</button>
     ${g.privateIntel.length?'<button id="private-intel-desktop" class="full">我的查验记录</button>':''}${history()}
   </aside></div>`;
   if(historyOpen)$('history').open=true;
@@ -579,21 +580,57 @@ function renderModalRound(){
   for(const button of dock.querySelectorAll('button'))button.disabled=busy||showHome;
 }
 
+const paperCues=['handbook-lift-1','handbook-lift-2','handbook-turn-1','handbook-turn-2','handbook-turn-3','handbook-turn-4'];
 function guide(section='rules',role=null){
   if(section instanceof Event)section='rules';
-  preloadCue('paper');
   dialog('圆桌手册',handbookMarkup({players:view?.players.length,settings:view?.settings,section}),'wide-dialog handbook-dialog');
-  handbook=mountHandbook($('handbook'),{onTurn:()=>playCue('paper')});
+  const root=$('handbook');
+  const prepare=()=>{for(const cue of paperCues)void preloadCue(cue);};
+  const paper=id=>{
+    const pending=preloadCue(id);
+    if(!pending){playCue(id);return;}
+    const expiry=performance.now()+200;
+    void pending.then(()=>{if(root.isConnected&&performance.now()<expiry)playCue(id);});
+  };
+  prepare();
+  handbook=mountHandbook(root,{
+    onPrepare:prepare,
+    onLift:variant=>paper('handbook-lift-'+variant),
+    onTurn:variant=>paper('handbook-turn-'+variant),
+    onSelect:()=>playCue('pick'),
+  });
   if(role)handbook.openRole(role);
   renderModalRound();
 }
-function peekRole(){if(!view?.game)return;const g=view.game,r=ROLES[g.myRole],confirmed=g.confirmed.includes(view.me);let hasPeeked=false,timer;
-  const portrait = roleArt(g.myRole,view.players.findIndex(player => player.id === view.me));
-  dialog('我的秘密身份',`<div id="private-wrapper"><p class="private-reminder">按住卡牌查看，松开立即遮住；键盘可按住空格或回车。</p><button class="role-cover" id="hold-role" aria-label="按住查看我的身份"><span class="cover-mark" aria-hidden="true"></span><span class="cover-text">按住查看身份</span><img src="${portrait}" alt="我的角色立绘" width="384" height="512"></button><div id="private-role-details" class="private-role"><h3 class="role-name">${r.name} <span class="badge ${r.side}">${r.side==='good'?'好人':'邪恶'}</span></h3><p class="role-desc">${r.description}</p>${g.intel.length?`<div class="intel"><strong>你掌握的信息</strong><br>${g.intel.map(p=>`${esc(name(p.id))} · ${p.label}`).join('<br>')}</div>`:'<p class="muted">你没有额外的开局身份信息。</p>'}</div></div>`,'private-dialog',g.phase==='reveal'&&!confirmed?'<button id="confirm-role" class="primary full" disabled>确认身份</button>':'');
-  const hold=$('hold-role'),wrapper=$('private-wrapper');hold.focus({preventScroll:true});const reveal=()=>{timer=setTimeout(()=>{wrapper.classList.add('is-peeking');playCue('reveal',{private:true});hasPeeked=true;if($('confirm-role'))$('confirm-role').disabled=false;},220);};const hide=()=>{clearTimeout(timer);wrapper.classList.remove('is-peeking');};
-  hold.addEventListener('pointerdown',e=>{e.preventDefault();hold.setPointerCapture(e.pointerId);reveal();});for(const ev of ['pointerup','pointercancel','lostpointercapture','blur'])hold.addEventListener(ev,hide);
-  hold.addEventListener('keydown',e=>{if([' ','Enter'].includes(e.key)&&!e.repeat){e.preventDefault();reveal();}});hold.addEventListener('keyup',hide);hold.addEventListener('contextmenu',e=>e.preventDefault());
-  $('confirm-role')?.addEventListener('click',()=>{if(!hasPeeked)return;closeDialog();run(()=>command('confirmRole'));});
+function peekRole(){
+  const game=view?.game, role=ROLES[game?.myRole];
+  if(!role||showHome||view.closed)return;
+  const needsConfirmation=game.phase==='reveal'&&!game.confirmed.includes(view.me);
+  const portrait=roleArt(game.myRole,view.players.findIndex(player=>player.id===view.me));
+  const intel=game.intel.length?'<ul class="identity-intel">'+game.intel.map(player=>
+    `<li><strong>${esc(name(player.id))}</strong><span>${esc(player.label)}</span></li>`).join('')+'</ul>':'';
+  dialog('我的身份',`<article id="private-wrapper" class="identity-card" data-faction="${role.side}">
+    <button id="cover-identity" class="identity-portrait" aria-label="点击立绘盖住身份">
+      <img src="${portrait}" alt="" width="384" height="512" draggable="false">
+      <span>点此盖住</span>
+    </button>
+    <div class="identity-details"><span class="identity-faction">${role.side==='good'?'好人阵营':'邪恶阵营'}</span>
+      <h3 class="role-name">${role.name}</h3><p>${role.description}</p>
+      ${intel?'<h4>我的线索</h4>'+intel:''}
+    </div>
+  </article>`,'private-dialog',needsConfirmation?`<button id="confirm-role" class="primary full"${disabled(busy)}>确认并盖住</button>`:'');
+  const cover=()=>{
+    const returnTo=$('peek-role')||$('identity-header');
+    closeDialog();
+    if(!returnTo?.hidden)returnTo?.focus({preventScroll:true});
+  };
+  $('cover-identity').addEventListener('click',cover);
+  $('confirm-role')?.addEventListener('click',()=>{
+    if(busy||view?.game?.id!==game.id||view.game.confirmed.includes(view.me))return;
+    cover();
+    void run(()=>command('confirmRole'));
+  });
+  playCue('card',{private:true});
 }
 function invite(){const url=`${location.origin}/?room=${view.code}`;dialog('邀请朋友入座',`<p class="muted">朋友用浏览器打开链接即可加入，不需要注册。</p><canvas id="invite-qr" class="pair-qr" aria-label="在线房间邀请二维码"></canvas><label for="invite-link">邀请链接</label><input id="invite-link" value="${esc(url)}" readonly><div class="spacer"></div><button id="copy-invite" class="primary full">复制邀请链接</button><p class="qr-note">邀请码：${esc(view.code)}。换浏览器不会自动继承原座位。</p>`);drawQR($('invite-qr'),url).catch(()=>toast('二维码生成失败，可以直接复制链接。'));$('copy-invite').onclick=async()=>{try{await navigator.clipboard.writeText(url);toast('邀请链接已复制。');}catch{$('invite-link').select();toast('请长按或按 Ctrl+C 复制链接。');}};}
 async function scanInto(callback){
@@ -691,9 +728,8 @@ function hostMenu(){
   const local=transport.kind==='practice';
   dialog(host?'房间管理':'牌桌菜单',`<div class="stack-actions" id="room-menu-content">
     ${(!view.game||view.game.phase==='finished')&&!local?'<button id="profile">我的资料</button>':''}
-    ${!view.game&&!local?'<button id="room-settings-menu">本局角色</button>':''}
     <button id="player-records">游戏档案</button>
-    ${host&&transport===online&&!view.game?`<button id="add-bot"${disabled(view.players.length>=10)}>添加 1 个人机</button><button id="fill-bots"${disabled(view.players.length>=5)}>补到 5 人</button>`:''}
+    ${host&&transport===online&&!view.game?`<button id="add-bot"${disabled(view.players.length>=10)}>添加 1 个人机</button>`:''}
     ${local?`<button id="practice-pause">${transport.paused?'继续人机':'暂停人机'}</button><button id="practice-step"${disabled(!transport.paused||!transport.canStep)}>人机单步</button>`:''}
     ${host&&view.game?'<button id="reset-room">结束本局，回大厅</button>':''}
     <button id="leave-room" class="danger">${host&&!local?'关闭房间':'离开房间'}</button></div>`);
@@ -768,25 +804,42 @@ function showOwnRoom(){
   render();
 }
 
-function setupOnline(mode,{code='',preview=null,draft=null,focusCode=false}={}){
+function setupOnline(mode,{code='',preview=null,draft=null,focusCode=false,useAccount=false}={}){
   if(mode==='create'&&view&&!view.closed){toast('请先离开或继续当前牌桌。');return;}
-  const join=mode==='join',current=preview?.current;
-  const switching=current&&current.code!==code;
-  const used=preview?.usedAvatars||[];
-  const starting=draft||newGuestProfile();
+  const join=mode==='join';
+  const activePreview=join&&roomCode(code)===preview?.code?preview:null;
+  const current=activePreview?.current;
+  const switching=current&&current.code!==roomCode(code);
+  const used=activePreview?.usedAvatars||[];
+  const starting=draft||(person.name==='圆桌旅人'?newGuestProfile():person);
   const requested=used.includes(avatarId(starting.avatar))?{...starting,avatar:randomProfile(starting,used).avatar}:starting;
   const notice=switching?(current.host?
     `加入后将关闭你主持的 ${current.code} 房间${current.playing?'，进行中的一局将记为中止':''}。`:
     `加入前将先离开 ${current.code} 房间。`):'';
-  dialog(join?'加入房间':'创建房间',
-    `<form id="online-setup" data-mode="${mode}">
-      ${join?`<div class="field"><label for="join-code">房间码或邀请链接</label><input id="join-code" value="${esc(code)}" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="180"></div>`:''}
+  dialog('在线房间',
+    `<div class="entry-scene" aria-hidden="true"></div>
+    <form id="online-setup" data-mode="${mode}" class="entry-form">
+      <div class="entry-modes" role="group" aria-label="在线房间操作">
+        <button type="button" data-entry-mode="create" aria-pressed="${!join}"${disabled(Boolean(view&&!view.closed))}>创建</button>
+        <button type="button" data-entry-mode="join" aria-pressed="${join}">加入</button>
+      </div>
+      ${join?`<div class="field"><label for="join-code">房间码或邀请链接</label><input id="join-code" value="${esc(code)}" placeholder="输入房间码或粘贴邀请链接" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="180"></div>`:''}
       ${notice?`<p class="notice">${esc(notice)}</p>`:''}
-      ${profileForm(requested,used,!accountAccess?.signedIn)}
-    </form>`,'setup-dialog',
+      <div class="entry-profile">${profileForm(requested,used,!accountAccess?.signedIn)}</div>
+    </form>`,`setup-dialog chamber-entry chamber-${mode}`,
     `${switching?'<button id="return-own-table">回原牌桌</button>':''}<button id="submit-online" type="submit" form="online-setup" class="primary">${switching?'确认切换':join?'加入房间':'创建房间'}</button>`);
   const form=$('online-setup');
   form.invitePreview=preview;
+  if(useAccount&&requested.avatar===starting.avatar)$('nickname').dataset.useAccount='true';
+  for(const button of form.querySelectorAll('[data-entry-mode]'))button.addEventListener('click',()=>{
+    const next=button.dataset.entryMode;
+    if(busy||next===mode)return;
+    const nickname=$('nickname'),nextCode=$('join-code')?.value??code;
+    playCue('pick');
+    setupOnline(next,{code:nextCode,preview,
+      draft:{name:nickname.value,avatar:form.querySelector('.avatar-choice.active')?.dataset.avatar??requested.avatar},
+      useAccount:nickname.dataset.useAccount==='true',focusCode:next==='join'});
+  });
   if(join){
     const avatarAvailability=entries=>{
       const picker=form.querySelector('.game-avatar-picker');
@@ -866,7 +919,7 @@ async function enterOnline(form){
         if(!preview.canSwitch)throw new Error('请完成当前对局后再加入其他房间。');
         const confirmed=form.invitePreview?.current;
         if(form.invitePreview?.code!==code||confirmed?.version!==preview.current.version||confirmed?.code!==preview.current.code){
-          setupOnline('join',{code,preview,draft:p});
+          setupOnline('join',{code,preview,draft:p,useAccount:useAccount==='true'});
           return;
         }
         from={code:preview.current.code,version:preview.current.version};
@@ -902,7 +955,8 @@ function setupOffline(mode){
   if(view&&!view.closed){toast('请先离开当前牌桌。');return;}
   const local=offlinePerson.name==='圆桌旅人'?{...offlinePerson,...randomProfile(offlinePerson)}:offlinePerson;
   dialog(mode==='create'?'创建离线房间':'扫描离线邀请',
-    profileForm(local,[],true),'setup-dialog',
+    `<div class="entry-scene" aria-hidden="true"></div><div class="entry-form entry-profile">${profileForm(local,[],true)}</div>`,
+    `setup-dialog chamber-entry chamber-${mode}`,
     `<button id="submit-offline" type="button" class="primary" data-offline-mode="${mode}">${mode==='create'?'创建离线房间':'打开扫码'}</button>`);
 }
 
@@ -1026,8 +1080,8 @@ document.addEventListener('click',e=>{
     switch(id){
       case 'player-records': case 'home-records': openRecords();return;
       case 'offline-records': case 'home-offline-records': showOfflineRecords();return;
-      case 'account-menu': case 'account-details': accountMenu();return;
-      case 'audio-settings': soundSettings();return;
+      case 'account-menu': case 'account-details': playCue('click');accountMenu();return;
+      case 'audio-settings': playCue('click');soundSettings();return;
       case 'preview-sound': playCue('success');return;
       case 'retry-online': if(!online.resume())void syncOnline();return;
       case 'use-account-profile': useAccountProfile();return;
@@ -1035,37 +1089,37 @@ document.addEventListener('click',e=>{
       case 'preview-guest': previewGuest();return;
       case 'cancel-claim': guestPreview=null;closeDialog();return;
       case 'claim-guest': claimGuest();return;
-      case 'guide': case 'guide-home': case 'guide-game': case 'guide-game-desktop': guide();return;
+      case 'guide': guide();return;
       case 'guide-room': case 'guide-room-desktop': case 'home-handbook': guide('roles');return;
       case 'home-quests': guide('quests');return;
       case 'modal-close': case 'cancel-action':
         if($('online-setup')?.invitePreview?.code===inviteCode)inviteDismissed=true;
         closeDialog();return;
       case 'peek-role': case 'identity-header': peekRole();return;
-      case 'invite': invite();return;
+      case 'invite': playCue('click');invite();return;
       case 'profile': profileDialog();return;
-      case 'room-menu': hostMenu();return;
-      case 'room-settings-menu': case 'lobby-mobile-settings': showRoomSettings();return;
-      case 'go-home': case 'brand-home': e.preventDefault();closeDialog();dismissScene();showHome=true;render();return;
-      case 'resume-current': case 'return-own-table': showOwnRoom();return;
-      case 'create-online': setupOnline('create');return;
-      case 'join-online': setupOnline('join',{code:inviteCode,focusCode:true});return;
+      case 'room-menu': playCue('click');hostMenu();return;
+      case 'lobby-mobile-settings': showRoomSettings();return;
+      case 'go-home': case 'brand-home': e.preventDefault();playCue('click');closeDialog();dismissScene();showHome=true;render();return;
+      case 'resume-current': case 'return-own-table': playCue('click');showOwnRoom();return;
+      case 'create-online': playCue('click');setupOnline('create');return;
+      case 'join-online':
+        playCue('click');setupOnline('join',{code:inviteCode,focusCode:matchMedia('(pointer:fine)').matches});return;
       case 'public-history': showPublicHistory();return;
       case 'public-screen': openPublicDisplay(view);return;
-      case 'offline-menu': offlineMenu();return;
+      case 'offline-menu': playCue('click');offlineMenu();return;
       case 'practice-menu': practiceSetup();return;
       case 'enter-practice': startPractice();return;
       case 'practice-pause': transport.setPaused(!transport.paused);hostMenu();return;
       case 'practice-step': if(transport.canStep)transport.step();hostMenu();return;
       case 'add-bot': run(async()=>{await command('addBot');hostMenu();});return;
-      case 'fill-bots': run(async()=>{await command('fillBots');hostMenu();});return;
       case 'fill-room-bots': run(()=>command('fillBots'));return;
       case 'pair-host': run(pairHost);return;
       case 'retry-offline': case 'retry-offline-pair': run(()=>joinOffline(person));return;
       case 'prepare-offline': run(prepareOffline);return;
-      case 'close-own-room': case 'leave-room': exitRoom();return;
-      case 'create-offline': setupOffline('create');return;
-      case 'join-offline': setupOffline('join');return;
+      case 'leave-room': exitRoom();return;
+      case 'create-offline': playCue('click');setupOffline('create');return;
+      case 'join-offline': playCue('click');setupOffline('join');return;
       case 'submit-offline': submitOffline($('submit-offline').dataset.offlineMode);return;
       case 'restore-offline':
         if(view&&!view.closed){toast('请先离开当前牌桌。');return;}

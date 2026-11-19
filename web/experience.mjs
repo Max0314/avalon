@@ -7,7 +7,7 @@ export const EXPERIENCE_PATH = '/?preview=effects';
 
 const groups = {scene:'动画', cue:'音效', score:'配乐'};
 const sounds = {
-  paper:'手册翻页', seal:'开启信封', card:'翻开卡牌', wax:'表决封蜡', scroll:'展开卷轴',
+  'handbook-lift-1':'手册掀页', 'handbook-turn-1':'手册翻页', seal:'开启信封', card:'翻开卡牌', wax:'表决封蜡', scroll:'展开卷轴',
   'vote-yes':'表决通过', 'vote-no':'表决未通过', 'shield-light':'任务成功',
   'shield-dark':'任务失败', water:'湖面查验', oath:'终局指认', 'crown-light':'好人胜利', 'crown-dark':'邪恶胜利',
 };
@@ -25,7 +25,7 @@ const items = {
 export function mountExperience(root) {
   pauseBackgroundAudio();
   const preferences = getAudioSettings();
-  const selected = {scene:'deal', cue:'paper', score:'hall'};
+  const selected = {scene:'deal', cue:'handbook-turn-1', score:'hall'};
   let group = 'scene';
   let playing = false;
   let playId = 0;

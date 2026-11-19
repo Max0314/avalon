@@ -1,4 +1,4 @@
-# 新版定妆与昼夜场景的生成提示词
+# 人物与场景的生成提示词
 
 使用内置 ImageGen。主角色定妆利用血染钟楼已选定的绯红女郎、投毒者及士兵图作为光线、哑光材质和人物气质参考。角色文件与原稿使用本仓库独立生成结果。
 
@@ -21,3 +21,6 @@ Use case: historical-scene. A lighting comparison diptych for a game's home back
 ## 石厅日景
 
 Use case: lighting-weather. Relight the actual supplied Arthurian stone room photo from moonlit night to naturally lit late morning, for a locked match cut on a game background. Preserve locked perspective, framing, aspect ratio 3:2, the exact rough gray masonry layout and central column, top of the wooden round table in lower third, placement of chairs, twin pointed windows on the left, rear arch, and fireplace exactly on right. Change only lighting and time cues: warm soft daylight from the tall left windows, greyish-green branches and cloudy pale blue through glass, realistic weak warm highlight on the table and floor, extinguished fireplace with black logs and traces of amber embers. Slight analogue grain, dry matte natural oak, understated dark historic set, richly readable texture even in the shadows. No people, text, luxury objects, new furniture, gold detail or glossy HDR. Ensure appreciably more visible masonry than the supplied night photograph.
+## 建房与入房
+
+Two original game background plates in ONE perfectly split vertical diptych (1024x1536 portrait master divided exactly at y=768, each 1024x768 wide part independent, no divider). Arthurian castle, extremely cinematic practical location cinematography, subtle dry film grain, beautiful deep restrained darkness and warm candle amber; actual rough medieval stone, brass, worn wood, no fantasy gloss. Top plate (create a table): inside an intimate stone room, golden candlelight spills from the left over an antique round oak tabletop, subtle oiled wood, wrought iron candleholder, a closed order with plain oxblood wax at LEFT third, stacked chest and empty chairs in soft distant depth. Bottom plate (join a table): camera crossing the outer gate at blue-hour, wet stone threshold framed by a hewn pointed doorway, lanterns inside to LEFT third, hint of amber light in distant room, slate blue ambient light. Both plates keep the interesting motif in left half, other right half subdued dark texture, suitable for form contrast and responsive centre crop. The two distinct environments should read immediately as an invitation to host vs arriving from outside. No lettering, no people, no graphical frames, no white space, no animation effects, no overdone fog or sheen.

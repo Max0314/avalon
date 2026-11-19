@@ -98,14 +98,14 @@
   border: 1px solid #caaa6e;
   border-radius: 9px;
   background: #805d40;
-  touch-action: pan-y;
+  touch-action: pan-y pinch-zoom;
 }
 
 .handbook-pane, .handbook-detail-content {
   overscroll-behavior: contain;
   overflow: hidden auto;
   scrollbar-gutter: stable;
-  touch-action: pan-y;
+  touch-action: pan-y pinch-zoom;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -120,30 +120,20 @@
   box-shadow: inset 0 0 22px #67451d44;
 }
 
-.handbook-deck[data-drag="next"] { --turn-sign: -1; --fold-side: right; }
-.handbook-deck[data-drag="prev"] { --turn-sign: 1; --fold-side: left; }
+.handbook-turn-outgoing { z-index: 1; }
 
-.handbook-deck[data-drag] .handbook-pane {
-  transform-origin: var(--fold-side) center;
-  transform: perspective(780px)
-    translateX(calc(var(--turn-sign) * var(--fold) * 22%))
-    rotateY(calc(var(--fold) * var(--turn-sign) * 21deg));
-}
-
-.handbook-deck[data-drag]::after {
-  content: "";
+.handbook-curl {
   pointer-events: none;
   position: absolute;
-  z-index: 1;
-  inset-block: 0;
-  width: calc(var(--fold) * 35%);
-  background:
-    radial-gradient(ellipse at 50% var(--contact), #fbecc5c9, transparent 68%),
-    linear-gradient(to var(--fold-side), #23170b28, #bc9460c7 31%, #e9c995db 77%, #53341b9e);
+  z-index: 2;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
-.handbook-deck[data-drag="next"]::after { right: 0; }
-.handbook-deck[data-drag="prev"]::after { left: 0; }
+.handbook-deck[data-drag]:not([data-turn-corner]) .handbook-pane {
+  translate: var(--handbook-edge, 0px) 0;
+}
 
 .handbook-rule-banner {
   min-height: 122px;
@@ -306,7 +296,7 @@
 
 .handbook-role-detail {
   position: absolute;
-  z-index: 2;
+  z-index: 3;
   inset: 0;
   padding: clamp(3px, 1vw, 8px);
   background: #241a12a6;
@@ -430,8 +420,4 @@
   .handbook-portrait::after { background: linear-gradient(to bottom, transparent 78%, #dfd4be80 92%, var(--book-paper)); }
   .handbook-counts { gap: 3px; }
   .handbook-counts button { flex: 1 1 39px; padding-inline: 1px; font-size: .79rem; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .handbook-deck[data-drag] .handbook-pane { transform: none; }
 }

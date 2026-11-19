@@ -18,6 +18,8 @@
 
 在远端隔离 PostgreSQL 中通过 63 项检查。远端 Chromium 专项核对了首页和牌桌的昼夜切换、刷新后的设置恢复、忠臣和爪牙变体、湖中仙女立绘、内联演出及实际音效与配乐播放。体验页未发起房间 API 或 WebSocket 请求。
 
+2026-11-20 交互候选基于线上 `1511e28`，运维规范为 `5bd4cd15ba658682ec4feff5b568f58dd406648e`。本次修改浏览器内的进桌、身份和手册交互。两张建房及入房背景与六条翻页音效由现有媒体白名单和构建清单交付，随离线包更新。沿用当前 PostgreSQL 数据库及发布入口，回退镜像为 `1511e28`。
+
 - 主机：腾讯云成都 `1.14.72.50`，域名 `avalon.fribench.cn`。
 - 路径：`/srv/fribench/games/avalon/repo.git` 为只读来源缓存；`releases/<完整 SHA>` 为归档制品；`current` 指向正在运行的发布目录。
 - 项目 `fribench-avalon`，镜像 `fribench-avalon:<完整 SHA>`，非 root、只读文件系统、256 MB/0.5 CPU/64 PIDs；仅 `127.0.0.1:23010 → 3000`。

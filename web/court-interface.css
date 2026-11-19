@@ -1,0 +1,283 @@
+:root {
+  --court-edge:#b2925f54;
+  --court-dark:#1b1b21;
+  --court-ivory:#f4e6cc;
+  --court-gold:#e0c28e;
+}
+
+/* One pressed, focused and disabled language for the main controls and dialogs. */
+:where(.site-header, #app, #modal) button:focus-visible,
+:where(#app, #modal) :is(input, select, summary, .button-link):focus-visible {
+  outline:2px solid #e9c891;
+  outline-offset:2px;
+}
+:is(.front-play,.front-library,.room-tools,.lobby-bottom,.action-panel,#modal-actions,.stack-actions) button {
+  transition:background-color .15s ease,border-color .15s ease,box-shadow .15s ease,translate .15s ease;
+}
+:is(.front-play,.front-library,.room-tools,.lobby-bottom,.action-panel,#modal-actions,.stack-actions) button:enabled:active {
+  translate:0 1px;
+}
+:is(.room-tools,.table-shortcuts,.lobby-bottom,.action-panel,#modal-actions,.stack-actions) button:not(.primary):not(.danger) {
+  border-color:var(--court-edge);
+  background:linear-gradient(150deg,#302d2d,#202027 70%);
+}
+:is(.room-tools,.table-shortcuts,.lobby-bottom,.action-panel,#modal-actions,.stack-actions) button:not(.primary):not(.danger):hover:enabled {
+  border-color:#c9a772aa;
+  background:#383139;
+}
+:is(.room-tools,.table-shortcuts,.lobby-bottom,.action-panel,#modal-actions,.stack-actions) button[aria-pressed="true"] {
+  box-shadow:inset 0 0 0 1px #e1bd79a8;
+}
+#vote-no, #guide-vote-no { color:#f0c4b3; }
+#vote-no:hover:enabled, #guide-vote-no:hover:enabled { border-color:#c87c68; }
+.lobby-bottom #ready:not(.primary) { color:#ceddc6; border-color:#91ab815e; }
+#modal:where(:not(.handbook-dialog,.chamber-entry,.private-dialog)) {
+  background:radial-gradient(ellipse at 10% 0,#37312c 0,transparent 55%),#1d1d23;
+  border-color:#a28558a1;
+}
+#modal:has(#account-panel),
+#modal.offline-dialog {
+  background:linear-gradient(145deg,#221d23c7,#16161df5 80%),var(--gate-image) 28% 40%/cover #1c1a21;
+}
+#modal:has(.device-settings),
+#modal:has(#room-menu-content) {
+  background:linear-gradient(135deg,#221e20ce,#15151ef5 70%),var(--hall-image) center/cover #211c21;
+}
+#modal:has(.pair-qr),
+#modal:has(#scan-video) {
+  background:linear-gradient(142deg,#201a21de,#191923f7 65%),url('/art/court/entry-join.webp') 30% 46%/cover #1c1921;
+}
+.offline-entrance { display:grid; gap:9px; }
+.offline-choices { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+.offline-choices button {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  min-height:47px;
+  background:linear-gradient(160deg,#4b3a2f,#252228 85%);
+  border-color:#a78a5e;
+}
+.offline-choices button:hover:enabled { border-color:#f3cb89; }
+.offline-tools { display:flex; gap:6px; flex-wrap:wrap; padding-block:6px; border-top:1px solid var(--court-edge); }
+.offline-tools button { flex:1 1 auto; min-height:35px; padding:4px 8px; color:#e3d4bc; font-size:12px; }
+
+/* Gate and council-room buttons use the same metalwork, with different emphasis. */
+.front-actions { gap:8px; }
+.front-play { gap:9px; }
+.front-play button {
+  --entry-button-ink:#efdfc0;
+  position:relative;
+  display:flex;
+  min-height:54px;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  color:var(--entry-button-ink);
+  border:1px solid #b69a688f;
+  border-radius:6px;
+  background:linear-gradient(145deg,#383537,#171820 85%);
+  box-shadow:inset 0 0 0 3px #110b0a38,0 5px 16px #09070b6b;
+  font:700 16px/1.15 var(--serif);
+}
+.front-play .primary {
+  --entry-button-ink:#261c13;
+  background:linear-gradient(113deg,#f2dcb7,#d8b98b 53%,#b9956a);
+  border-color:#f9dcb0;
+  box-shadow:inset 0 0 0 2px #6e51356b,inset 0 0 0 4px #edcca45c,0 6px 19px #130b06a6;
+}
+.front-play button:hover:enabled { border-color:#ffe2aa; filter:brightness(1.08); }
+.front-play button:disabled { filter:saturate(.45); }
+.front-play button[hidden] { display:none; }
+#resume-current { grid-column:1; grid-row:1; }
+[data-emblem]::before {
+  content:"";
+  display:inline-block;
+  flex:0 0 auto;
+  width:.85em;
+  height:.85em;
+  border:1px solid currentColor;
+  opacity:.78;
+}
+[data-emblem="table"]::before { border-radius:50%; box-shadow:inset 0 0 0 2px #cab17c45; }
+[data-emblem="gate"]::before { border-radius:55% 55% 1px 1px; border-bottom-width:2px; }
+[data-emblem="book"]::before { border-radius:1px; border-left:3px double currentColor; }
+[data-emblem="archive"]::before { height:.67em; border-top:3px double currentColor; }
+.front-library {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:5px;
+  padding:5px;
+  border:1px solid #b1956a45;
+  border-radius:6px;
+  background:#13151cc7;
+}
+.front-library button {
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  gap:6px;
+  min-height:38px;
+  font-size:13px;
+  color:#e7dac2;
+  border:1px solid transparent;
+  background:transparent;
+}
+.front-library button:hover:enabled { border-color:#b1956a7d; background:#b99a6026; }
+
+#modal.chamber-entry {
+  --entry-art:url('/art/court/entry-create.webp');
+  width:min(760px,calc(100% - 24px));
+  max-width:760px;
+  background:radial-gradient(ellipse at 0 0,#38271e,transparent 62%),#1a1a20;
+  border:1px solid #bb9a64ba;
+  box-shadow:0 20px 75px #050406d9,inset 0 0 0 3px #e4b46e14;
+}
+#modal.chamber-join { --entry-art:url('/art/court/entry-join.webp'); }
+#modal.chamber-entry > #modal-heading { padding:10px 17px; }
+#modal.chamber-entry > #modal-body {
+  display:grid;
+  grid-template-columns:minmax(0,.85fr) minmax(0,1fr);
+  align-items:start;
+  gap:17px;
+  padding:0 17px 0 0;
+}
+.entry-scene {
+  position:sticky;
+  top:0;
+  align-self:stretch;
+  min-height:260px;
+  background:linear-gradient(90deg,transparent 58%,#13131aa8),var(--entry-art) 31% 50%/cover #2c2320;
+  box-shadow:inset -1px 0 #b3925c62;
+}
+.entry-form { min-width:0; padding:14px 0; }
+.entry-modes {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:3px;
+  margin-bottom:13px;
+  padding:3px;
+  border:1px solid #baa06b5e;
+  border-radius:7px;
+  background:#131118;
+}
+.entry-modes button {
+  margin:0;
+  padding:5px 8px;
+  min-width:0;
+  min-height:38px;
+  border-color:transparent;
+  background:transparent;
+  color:#dcd1bc;
+}
+.entry-modes button[aria-pressed="true"] { border-color:#d8b47a91; background:#493a29; color:#ffe9bb; }
+.entry-modes button[aria-pressed="false"]:hover:enabled { background:#2f2829; }
+.entry-form :is(input,select) {
+  color:#f6e7ce;
+  background:#15151c;
+  border:1px solid #9e845b8c;
+}
+.entry-form :is(input,select):focus { border-color:#dfbd84; }
+.entry-profile {
+  display:flow-root;
+  min-width:0;
+  padding:10px;
+  border-radius:7px;
+  border:1px solid #b2935f39;
+  background:#2e2930a3;
+}
+.entry-form.entry-profile { margin:14px 0; }
+.entry-profile :is(#shuffle-profile,#use-account-profile) { min-height:32px; padding:3px 8px; font-size:12px; }
+.entry-profile .avatar-choice.active { box-shadow:inset 0 0 0 2px #dcb978; }
+#modal.chamber-entry > #modal-actions { background:linear-gradient(100deg,#262124,#221e25); }
+#modal.chamber-entry > #modal-actions .primary { flex:1; }
+
+#modal.private-dialog {
+  width:min(710px,calc(100% - 20px));
+  max-width:710px;
+  background:linear-gradient(130deg,#2f2123,#16171d 52%);
+  border-color:#b99766;
+}
+#modal.private-dialog > #modal-body { padding:12px; }
+.identity-card {
+  display:grid;
+  grid-template-columns:minmax(100px,.82fr) minmax(0,1fr);
+  align-items:start;
+  gap:clamp(9px,3vw,22px);
+}
+.identity-portrait {
+  position:relative;
+  width:100%;
+  max-width:245px;
+  display:block;
+  text-align:center;
+  margin:0;
+  padding:3px;
+  overflow:hidden;
+  border:1px solid #d7b784a8;
+  border-radius:6px;
+  background:#15131a;
+  animation:identity-flip .29s cubic-bezier(.23,.68,.38,1) both;
+}
+.identity-portrait img { display:block; width:100%; height:auto; border-radius:3px; }
+.identity-portrait span {
+  position:absolute;
+  bottom:3px;
+  left:3px;
+  right:3px;
+  padding:12px 3px 6px;
+  font-size:12px;
+  color:#fff3dd;
+  background:linear-gradient(transparent,#110d15f0);
+}
+.identity-details { min-width:0; }
+.identity-details .role-name { margin:4px 0 8px; color:var(--court-ivory); }
+.identity-details p { margin:0 0 10px; line-height:1.55; }
+.identity-details h4 { margin:10px 0 5px; }
+.identity-faction { color:#c1d8bd; font-weight:700; font-size:12px; }
+[data-faction="evil"] .identity-faction { color:#edac9b; }
+.identity-intel { display:grid; gap:4px; padding:0; margin:0; list-style:none; }
+.identity-intel li {
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:space-between;
+  gap:3px 8px;
+  padding:5px 7px;
+  border:1px solid var(--court-edge);
+  background:var(--court-dark);
+  border-radius:4px;
+  font-size:13px;
+}
+.identity-intel span { color:#e0c69e; }
+@keyframes identity-flip { from {opacity:.32; transform:perspective(660px) rotateY(42deg);} to {opacity:1; transform:none;} }
+
+@media (max-width:600px) {
+  .front-play button { min-height:47px; font-size:15px; }
+  .front-library button { min-height:34px; font-size:12px; padding-inline:3px; }
+  #modal.chamber-entry > #modal-body { grid-template-columns:minmax(0,1fr); gap:0; padding:0; }
+  #modal.chamber-entry > #modal-heading { padding:6px 11px; }
+  .entry-scene {
+    position:static;
+    min-height:clamp(85px,19dvh,150px);
+    background:linear-gradient(0deg,#1a191fd6,transparent 47%),var(--entry-art) 30% 47%/cover #2c2320;
+    box-shadow:inset 0 -1px #b3925c62;
+  }
+  .entry-form { padding:9px 12px; }
+  .entry-form.entry-profile { margin:9px 12px; }
+  .entry-profile .game-avatar-grid { max-height:min(25dvh,155px); }
+  .identity-card { grid-template-columns:minmax(82px,.66fr) minmax(0,1fr); }
+  .identity-details p { font-size:13px; }
+  .identity-details .role-name { font-size:clamp(17px,5vw,23px); }
+}
+body[data-short-viewport] .entry-scene { min-height:0; }
+body[data-short-viewport] .front-play button { min-height:34px; }
+body[data-short-viewport] .front-library { padding:1px; }
+body[data-short-viewport] .front-library button { min-height:29px; }
+@media (prefers-reduced-motion:no-preference) {
+  .entry-scene { animation:chamber-light .22s ease-out both; }
+  @keyframes chamber-light { from {opacity:.45;} to {opacity:1;} }
+}
+@media (prefers-reduced-motion:reduce) {
+  .identity-portrait { animation:none; }
+  :is(.front-play,.front-library,.room-tools,.lobby-bottom,.action-panel,#modal-actions,.stack-actions) button { transition:none; }
+}

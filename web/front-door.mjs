@@ -24,9 +24,12 @@ export function frontDoorMarkup(){
       <output data-portrait-count></output><button data-carousel-step="1" aria-label="下一角色">›</button></div>
     </section>
     <div class="front-actions">
-      <div class="front-play"><button id="create-online" class="primary">创建房间</button><button id="join-online">加入房间</button></div>
-      <div class="front-library"><button id="guide-home">游戏教程</button><button id="home-handbook">角色图鉴</button><button id="offline-menu">离线同桌</button><button id="home-records">游戏档案</button></div>
-      <div class="resume-actions"><button id="resume-current" hidden>继续牌桌</button><button id="close-own-room" hidden>离开房间</button></div>
+      <div class="front-play">
+        <button id="create-online" class="primary" data-emblem="table">创建房间</button>
+        <button id="join-online" data-emblem="gate">加入房间</button>
+        <button id="resume-current" class="primary" data-emblem="table" hidden>继续牌桌</button>
+      </div>
+      <div class="front-library"><button id="home-handbook" data-emblem="book">角色图鉴</button><button id="offline-menu" data-emblem="table">离线同桌</button><button id="home-records" data-emblem="archive">游戏档案</button></div>
     </div></section>`;
 }
 
