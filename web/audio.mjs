@@ -47,6 +47,7 @@ catch { /* Storage is optional. */ }
 
 let scene = 'home';
 let winner = null;
+let backgroundPaused = false;
 let context, musicBus, effectBus;
 let pendingTrack, playing;
 const songBuffers = new Map();
@@ -81,8 +82,13 @@ export function setAudioScene(phase, ending={}) {
   syncMusic();
 }
 
+export function pauseBackgroundAudio() {
+  backgroundPaused = true;
+  syncMusic();
+}
+
 function currentTrack() {
-  if (document.hidden || !settings.music || !settings.musicVolume) return null;
+  if (backgroundPaused || document.hidden || !settings.music || !settings.musicVolume) return null;
   if (settings.track !== 'auto') return settings.track;
   if (scene==='finished' && winner==='good') return 'quest';
   return SCENE_TRACK[scene] ?? 'hall';

@@ -1,4 +1,5 @@
 import {ROLES} from '../shared/engine.mjs';
+import {roleArt} from '../shared/media.mjs';
 
 const roles=Object.entries(ROLES);
 let chosen=0;
@@ -15,7 +16,7 @@ export function frontDoorMarkup(){
     <div class="portrait-stage" aria-label="角色轮播" tabindex="0">
       <div class="portrait-track">${roles.map(([id,role],index)=>`
         <button type="button" class="portrait-card" data-portrait="${index}" aria-label="查看${role.name}">
-          <img src="/art/night/${id}.webp" width="384" height="512" alt="" decoding="async" draggable="false">
+          <img src="${roleArt(id)}" width="384" height="512" alt="" decoding="async" draggable="false">
           <span class="portrait-caption"><small>${role.side==='good'?'好人阵营':'邪恶阵营'}</small><strong>${role.name}</strong></span>
         </button>`).join('')}</div>
     </div>

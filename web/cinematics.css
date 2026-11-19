@@ -1,5 +1,6 @@
+.cinematic-dialog { --scene-glow: 236 184 104; }
+
 dialog.cinematic-dialog {
-  --scene-glow: 236 184 104;
   position: fixed;
   inset: var(--visual-top, 0px) 0 auto;
   width: 100vw;
@@ -21,7 +22,7 @@ dialog.cinematic-dialog {
 }
 
 dialog.cinematic-dialog:not([open]) { display: none; }
-dialog.cinematic-dialog:not([data-running]) * { animation-play-state: paused; }
+.cinematic-dialog:not([data-running]) * { animation-play-state: paused; }
 .cinematic-dialog::backdrop { background-color: #060a08; }
 .cinematic-dialog[data-tone="good"] { --scene-glow: 163 220 179; }
 .cinematic-dialog[data-tone="evil"] { --scene-glow: 223 116 93; }
@@ -42,7 +43,7 @@ dialog.cinematic-dialog:not([data-running]) * { animation-play-state: paused; }
 }
 
 .cinematic-frame::before {
-  background: url('/art/night/round-hall.webp') center 56% / cover no-repeat;
+  background: var(--hall-image) center 56% / cover no-repeat;
   opacity: .87;
 }
 
@@ -144,6 +145,10 @@ dialog.cinematic-dialog:not([data-running]) * { animation-play-state: paused; }
 .cinematic-dialog[data-scene="oath"] .cinematic-prop { filter: saturate(.64) brightness(.76) drop-shadow(0 1rem 1.5rem #000c); }
 
 .cinematic-dialog[data-scene="identity"] .cinematic-prop { animation: court-unseal .83s both; }
+.cinematic-dialog[data-scene="lake"] .cinematic-prop:has(+ .cinematic-portrait) {
+  inset: 52% 24% -9%;
+  z-index: 1;
+}
 .cinematic-portrait {
   inset: 7% 18%;
   width: 64%;

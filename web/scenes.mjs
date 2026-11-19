@@ -1,5 +1,6 @@
 import {playCue, preloadCue, setAudioScene} from './audio.mjs';
 import {ROLES} from '../shared/engine.mjs';
+import {ladyArt,roleArt} from '../shared/media.mjs';
 
 const HALL = '/art/night/round-hall.webp';
 const CASTLE = '/art/camelot.webp';
@@ -61,7 +62,8 @@ export function sceneEvents(previous, next, {live=true, publicOnly=false}={}) {
     const role = Object.hasOwn(ROLES,game.myRole) ? ROLES[game.myRole] : null;
     if (role && before.phase==='reveal' && game.confirmed?.includes(me) && !before.confirmed?.includes(me)) {
       events.push({kind:'identity',mode:'table',tone:'gold',private:true,prop:'letter',cue:'card',icon:'seal',
-        portrait:game.myRole,title:'身份已确认',detail:role.name});
+        portrait:roleArt(game.myRole,next.players?.findIndex(player => player.id === me) ?? 0),
+        title:'身份已确认',detail:role.name});
     }
     if (newVote(before,game,me,proposal)) events.push(receipt('你的表决已封存','wax',proposal));
     if (newQuestCard(before,game,me,result)) events.push(receipt('你的任务牌已封存','card',result));
@@ -69,7 +71,7 @@ export function sceneEvents(previous, next, {live=true, publicOnly=false}={}) {
     if (intel && before.phase==='lady' && before.ladyHolder===me &&
         game.privateIntel.length===(before.privateIntel?.length??0)+1) {
       events.push({kind:'lake',mode:'table',tone:'gold',private:true,prop:'bowl',cue:'water',icon:'seal',
-        title:'镜水映照',detail:`${roomName(next,intel.playerId)} · ${intel.side==='good'?'好人阵营':'邪恶阵营'}`});
+        portrait:ladyArt,title:'镜水映照',detail:`${roomName(next,intel.playerId)} · ${intel.side==='good'?'好人阵营':'邪恶阵营'}`});
     }
   }
 
@@ -174,19 +176,23 @@ const cueByPhase = {
   assassin:['crown-light','crown-dark'],
 };
 
-const previews = {
-  deal:{kind:'deal', prop:'letter', cue:'seal', title:'封缄入席', detail:'信已抵达'},
-  vote:{kind:'verdict', prop:'scroll', cue:'vote-yes', title:'出征队伍通过', count:'4 : 2', detail:'赞成 · 反对', tone:'good'},
-  questGood:{kind:'quest', prop:'shield', cue:'shield-light', title:'第 2 次任务成功', count:'3 : 0', detail:'成功牌 · 失败牌', tone:'good'},
-  questBad:{kind:'quest', prop:'shield', cue:'shield-dark', title:'第 2 次任务失败', count:'2 : 1', detail:'成功牌 · 失败牌', tone:'evil'},
-  lady:{kind:'lake', prop:'bowl', cue:'water', title:'湖中仙女', detail:'查验已完成'},
-  assassin:{kind:'oath', prop:'iron-crown', cue:'oath', title:'最后的指认', detail:'等待刺客作出选择', tone:'evil'},
-  winGood:{kind:'ending', prop:'gold-crown', cue:'crown-light', title:'好人守住了卡美洛', tone:'good'},
-  winEvil:{kind:'ending', prop:'iron-crown', cue:'crown-dark', title:'邪恶笼罩了卡美洛', tone:'evil'},
+export const scenePreviews = {
+  deal:{label:'发放身份',kind:'deal', prop:'letter', cue:'seal', title:'封缄入席', detail:'信已抵达'},
+  identity:{label:'确认身份',kind:'identity', prop:'letter', cue:'card', portrait:roleArt('merlin'), title:'身份已确认', detail:'梅林'},
+  ballot:{label:'开始表决',kind:'ballot', prop:'scroll', cue:'scroll', title:'队伍表决', detail:'全员提交后同时揭票'},
+  vote:{label:'表决通过',kind:'verdict', prop:'scroll', cue:'vote-yes', title:'出征队伍通过', count:'4 : 2', detail:'赞成 · 反对', tone:'good'},
+  reject:{label:'表决未通过',kind:'verdict', prop:'scroll', cue:'vote-no', title:'出征队伍未通过', count:'2 : 4', detail:'赞成 · 反对', tone:'evil'},
+  receipt:{label:'表决封存',kind:'receipt', prop:'letter', cue:'wax', title:'你的表决已封存'},
+  questGood:{label:'任务成功',kind:'quest', prop:'shield', cue:'shield-light', title:'第 2 次任务成功', count:'3 : 0', detail:'成功牌 · 失败牌', tone:'good'},
+  questBad:{label:'任务失败',kind:'quest', prop:'shield', cue:'shield-dark', title:'第 2 次任务失败', count:'2 : 1', detail:'成功牌 · 失败牌', tone:'evil'},
+  lady:{label:'湖中仙女',kind:'lake', prop:'bowl', cue:'water', portrait:ladyArt, title:'湖中仙女', detail:'查验已完成'},
+  assassin:{label:'终局指认',kind:'oath', prop:'iron-crown', cue:'oath', title:'最后的指认', detail:'等待刺客作出选择', tone:'evil'},
+  winGood:{label:'好人胜利',kind:'ending', prop:'gold-crown', cue:'crown-light', title:'好人守住了卡美洛', tone:'good'},
+  winEvil:{label:'邪恶胜利',kind:'ending', prop:'iron-crown', cue:'crown-dark', title:'邪恶笼罩了卡美洛', tone:'evil'},
 };
 
 /** Keeps the existing book dialog mounted while a priority stage occupies the top layer. */
-export function createSceneDirector({reading=()=>null}={}) {
+export function createSceneDirector({reading=()=>null,previewStage=null}={}) {
   let desired = {phase:'home'};
   let shownVersion = null;
   const reduced = ()=>globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -198,6 +204,7 @@ export function createSceneDirector({reading=()=>null}={}) {
 
   function present(entry, skip) {
     const book = reading();
+    const inline = entry.preview && previewStage;
     const immersive = entry.mode==='critical' || entry.mode==='table'&&!book;
     let output;
     let cue;
@@ -206,7 +213,7 @@ export function createSceneDirector({reading=()=>null}={}) {
     let musicTimer;
     let started = false;
     if (immersive) {
-      output = node('dialog','cinematic-dialog');
+      output = node(inline?'div':'dialog','cinematic-dialog');
       output.dataset.scene = entry.kind;
       output.dataset.tone = entry.tone;
       output.setAttribute('aria-label',entry.title);
@@ -224,7 +231,7 @@ export function createSceneDirector({reading=()=>null}={}) {
       }
       if (entry.portrait) {
         const picture = node('img','cinematic-portrait');
-        picture.src = `/art/night/${entry.portrait}.webp`;
+        picture.src = entry.portrait;
         picture.alt = '';
         object.append(picture);
       }
@@ -235,14 +242,18 @@ export function createSceneDirector({reading=()=>null}={}) {
       if (entry.count) caption.append(node('strong','cinematic-count',entry.count));
       caption.append(node('h2',null,entry.title));
       if (entry.detail) caption.append(node('p',null,entry.detail));
-      const dismiss = node('button','cinematic-skip','跳过');
-      dismiss.type = 'button';
-      dismiss.setAttribute('aria-label','跳过演出');
-      dismiss.addEventListener('click',skip);
-      output.addEventListener('cancel',event=>{event.preventDefault();skip();});
-      output.append(frame,caption,dismiss);
-      document.body.append(output);
-      output.showModal();
+      output.append(frame,caption);
+      if (inline) previewStage.append(output);
+      else {
+        const dismiss = node('button','cinematic-skip','跳过');
+        dismiss.type = 'button';
+        dismiss.setAttribute('aria-label','跳过演出');
+        dismiss.addEventListener('click',skip);
+        output.addEventListener('cancel',event=>{event.preventDefault();skip();});
+        output.append(dismiss);
+        document.body.append(output);
+        output.showModal();
+      }
     } else {
       output = node('div',`scene-notice cinematic-notice${book?' cinematic-book-notice':''}`);
       output.setAttribute('role','status');
@@ -259,12 +270,12 @@ export function createSceneDirector({reading=()=>null}={}) {
       started = true;
       clearTimeout(startTimer);
       output.dataset.running = '';
-      cue = playCue(entry.cue,{private:entry.private});
+      if (!inline) cue = playCue(entry.cue,{private:entry.private});
       if (entry.kind==='ending' && !entry.preview) {
         musicTimer = setTimeout(()=>setAudioScene('finished',{winner:entry.winner}),reduced()?0:980);
       }
     }
-    const priming = preloadCue(entry.cue);
+    const priming = !inline && preloadCue(entry.cue);
     if (priming && immersive && !reduced()) {
       startTimer = setTimeout(start,140);
       void priming.then(start);
@@ -276,6 +287,7 @@ export function createSceneDirector({reading=()=>null}={}) {
       cue?.();
       if (output.open) output.close();
       output.remove();
+      if (inline) entry.done();
       if (immediate && entry.kind==='ending' && !entry.preview) setAudioScene(desired.phase,{winner:desired.winner});
     };
   }
@@ -291,12 +303,12 @@ export function createSceneDirector({reading=()=>null}={}) {
       queue.push(sceneEvents(previous,next,options));
     },
     reset() { queue.reset(); shownVersion = null; },
-    preview(kind) {
-      if (queue.busy || document.hidden || !Object.hasOwn(previews,kind)) return false;
+    preview(kind, done=()=>{}) {
+      if (queue.busy || document.hidden || !Object.hasOwn(scenePreviews,kind)) return false;
       prepareImage(HALL);
       prepareImage(CASTLE);
       prepareImage(PROPS);
-      queue.push([{mode:'critical', preview:true, icon:'seal', tone:'gold', ...previews[kind]}]);
+      queue.push([{mode:'critical', preview:true, icon:'seal', tone:'gold', ...scenePreviews[kind], done}]);
       return true;
     },
     sound(phase,winner) {

@@ -17,7 +17,7 @@ test('首个快照、恢复和身份变化不重播，只有已确认的本人�
   assert.deepEqual(sceneEvents(reveal,view(4,'reveal',{confirmed:['other']})),[]);
   const confirmed=view(5,'nominate',{confirmed:['self','other']});
   const [identity]=sceneEvents(reveal,confirmed);
-  assert.equal(identity.portrait,'percival');
+  assert.equal(identity.portrait,'/art/court/percival.webp');
   assert.equal(identity.private,true);
   assert.equal(sceneEvents(reveal,confirmed,{publicOnly:true}).some(e=>e.private||e.portrait),false);
 });

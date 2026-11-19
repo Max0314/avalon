@@ -7,6 +7,8 @@ html {
 }
 
 body {
+  --gate-image: url('/art/court/gate-night.webp');
+  --hall-image: url('/art/night/round-hall.webp');
   position: fixed;
   inset: var(--visual-top, 0px) 0 auto;
   width: 100%;
@@ -20,6 +22,10 @@ body {
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
+}
+body[data-lighting="day"] {
+  --gate-image: url('/art/court/gate-day.webp');
+  --hall-image: url('/art/court/hall-day.webp');
 }
 
 input, textarea, [contenteditable="true"] {
@@ -76,7 +82,7 @@ button, a, summary { touch-action: manipulation; }
 body[data-view]:not([data-view="home"]) .site-footer { display:none; }
 body:not([data-view="home"]) #app { padding-bottom: max(7px, env(safe-area-inset-bottom)); }
 body:is([data-view="lobby"],[data-view="game"],[data-view="finished"]) {
-  background: linear-gradient(180deg,#0e1015b3,#0d0e13a6 50%,#0e0e13dc), url('/art/night/round-hall.webp') center/cover;
+  background: linear-gradient(180deg,#0e1015af,#0d0e138a 50%,#0e0e13dc), var(--hall-image) center/cover;
 }
 .lobby-roster-panel,.lobby-settings-panel { background:linear-gradient(145deg,#25262be8,#15161ce8); }
 #app:not([data-screen="home"]):not([data-screen="closed"]) .room-top {
@@ -106,7 +112,7 @@ body:is([data-view="lobby"],[data-view="game"],[data-view="finished"]) {
   border-radius: 5px;
   background: linear-gradient(90deg,#0a0c10ec 0%,#111319ac 37%,#14131922 73%),
     linear-gradient(0deg,#0d0c0feb,transparent 26%,transparent 75%,#0e101766),
-    url('/art/night/round-hall.webp') center 50% / cover #14161a;
+    var(--gate-image) center 50% / cover #14161a;
 }
 .portrait-readout { grid-area:intro; align-self:end; max-width:32rem; }
 .portrait-readout h1 {
@@ -385,7 +391,7 @@ body[data-view="display"] #app { max-width:none; grid-row:1/-1; grid-template-ro
   align-items:center;
   min-height:0; overflow:hidden;
   gap: 3vw;
-  background: linear-gradient(90deg,#11131990,#15151edb),url('/art/night/round-hall.webp') center/cover;
+  background: linear-gradient(90deg,#11131990,#15151edb),var(--hall-image) center/cover;
   padding: 3dvh 5vw;
 }
 .screen-display.waiting { display:grid; text-align:center; justify-content:center; grid-template-columns:1fr; }
@@ -423,7 +429,7 @@ body[data-short-viewport] .action-panel button { min-height:30px; }
     grid-template:"intro" auto "gallery" minmax(0,1fr) "actions" auto / minmax(0,1fr);
     gap:4px; padding:clamp(8px,2.6dvh,24px) clamp(10px,4vw,24px) 2px;
     background:linear-gradient(180deg,#0a0c10c9,transparent 27%,#10111666 68%,#0b0d10f2 94%),
-      url('/art/night/round-hall.webp') center / cover #17181c;
+      var(--gate-image) center / cover #17181c;
   }
   .portrait-readout,.front-actions { width:100%; max-width:34rem; justify-self:center; }
   .portrait-readout { text-align:center; }

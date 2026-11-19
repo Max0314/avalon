@@ -1,4 +1,5 @@
 import {EVIL, ROLES, SIZES} from '../shared/engine.mjs';
+import {ladyArt,roleArt,rolePortraits} from '../shared/media.mjs';
 
 const SECTIONS = {rules: '玩法', roles: '角色图鉴', quests: '任务人数'};
 const PAGES = [
@@ -11,10 +12,6 @@ const COUNTS = Object.keys(SIZES).map(Number);
 const OPTIONAL = new Set(['percival', 'morgana', 'mordred', 'oberon']);
 const FACTIONS = {good: '好人', evil: '邪恶'};
 
-export function roleArt(roleId) {
-  return Object.hasOwn(ROLES, roleId) ? `/art/night/${roleId}.webp` : null;
-}
-
 function roleType(id) {
   if (OPTIONAL.has(id)) return '房主可选';
   if (id === 'merlin' || id === 'assassin') return '每局必有';
@@ -23,6 +20,7 @@ function roleType(id) {
 
 function roleDetail(id, enabled) {
   const {name, side, image, description} = ROLES[id];
+  const portraits = rolePortraits[id];
   const status = typeof enabled === 'boolean' ? (enabled ? '本桌已启用' : '本桌未启用') : roleType(id);
   const guidance = id === 'percival'
     ? '<p class="handbook-clarification">如果未启用莫甘娜，你只会看到梅林一位候选人。</p>'
@@ -33,6 +31,10 @@ function roleDetail(id, enabled) {
       <div class="handbook-tags"><span>${FACTIONS[side]}阵营</span><span>${status}</span></div>
       <h3>${name}</h3>
       <p>${description}</p>${guidance}
+      ${portraits.length > 1 ? `<div class="handbook-cast" role="group" aria-label="切换${name}的立绘">
+        ${portraits.map((_,index) => `<button type="button" data-portrait-variant="${index}" aria-pressed="${index === 0}" aria-label="立绘 ${index+1}">${index+1}</button>`).join('')}
+        <small>同一身份的不同立绘</small>
+      </div>` : ''}
       <details class="handbook-original" data-note="original">
         <summary>查看原版卡面</summary>
         <img src="/cards/${image}" alt="${name}的原版英文卡面" loading="lazy" decoding="async" draggable="false">
@@ -53,7 +55,10 @@ function rules() {
     <li><h3>秘密交牌</h3><p>只有出征队员交牌。好人只能交成功，邪恶可以交成功或失败。通常一张失败牌就令任务失败；7～10 人局的第 4 轮需要两张。牌桌只公布数量。</p></li>
     <li><h3>刺客终局</h3><p>任务第三次成功后，由刺客指认一位玩家。指认梅林则邪恶反胜，指认其他人则好人获胜。</p></li>
   </ol>
-  <details class="handbook-note" data-note="lady"><summary>湖中仙女（可选规则）</summary><p>开启后，标记在开局时由首任队长右手边的玩家持有。第 2、3、4 次任务结束后，若尚未进入终局，持有者可私下查验一人的阵营，并把标记交给被查验者。曾持有标记的玩家不能再次成为查验对象。</p></details>
+  <details class="handbook-note" data-note="lady"><summary>湖中仙女（可选规则）</summary><div class="handbook-lake">
+    <img src="${ladyArt}" width="384" height="512" alt="雾湖边的湖中仙女" loading="lazy" decoding="async">
+    <p>开启后，标记在开局时由首任队长右手边的玩家持有。第 2、3、4 次任务结束后，若尚未进入终局，持有者可私下查验一人的阵营，并把标记交给被查验者。曾持有标记的玩家不能再次成为查验对象。</p>
+  </div></details>
   <details class="handbook-note" data-note="connection"><summary>在线和离线如何入桌？</summary><p>在线局分享邀请链接或房间码，同一浏览器保留自己的座位。离线同桌需要连接同一个 Wi-Fi 或热点，玩家与房主双向扫码；房主设备需要保持运行，掉线可重新扫码恢复座位。游戏无内置语音，可用外部通话或当面讨论。</p></details>`;
 }
 
@@ -316,6 +321,10 @@ export function mountHandbook(root, {onTurn = () => {}} = {}) {
       openRole(button.dataset.role);
     } else if (button.hasAttribute('data-role-back')) {
       back();
+    } else if (button.hasAttribute('data-portrait-variant')) {
+      const portrait = detail.querySelector('.handbook-portrait img');
+      portrait.src = roleArt(roleButton.dataset.role, Number(button.dataset.portraitVariant));
+      setPressed([...detail.querySelectorAll('[data-portrait-variant]')], button);
     } else if (button.dataset.count) {
       chooseCount(button);
     }

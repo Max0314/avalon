@@ -390,6 +390,32 @@
 .handbook-clarification { font-size: .82rem; color: var(--book-muted); margin: 9px 0 0; }
 .handbook-profile-copy p.handbook-clarification { margin-top: 7px; }
 
+.handbook-cast {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-block: 9px;
+}
+.handbook-cast button {
+  min-width: 40px;
+  min-height: 40px;
+  color: #423326;
+  background: #ebdec4;
+  border-color: #a89472;
+}
+.handbook-cast button[aria-pressed="true"] { color: #fff2d9; background: #634b30; }
+.handbook-cast small { font-size: 12px; }
+.handbook-lake {
+  display: grid;
+  grid-template-columns: minmax(64px, min(28%, 120px)) minmax(0,1fr);
+  align-items: start;
+  gap: 12px;
+  margin: 10px;
+}
+.handbook-lake img { display: block; width: 100%; height: auto; border-radius: 3px; }
+.handbook-lake p { margin: 0; }
+
 @media (max-width: 550px) {
   .handbook { gap: 5px; }
   .handbook-tabs button, .handbook-pager button { font-size: .78rem; }

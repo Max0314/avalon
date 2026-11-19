@@ -3,9 +3,12 @@ import {Online,OfflineHost,OfflineGuest,actionKey} from './transports.mjs';
 import {drawQR,startScanner} from './qr.mjs';
 import {AVATARS as CATALOGUE,avatarId,avatarPath} from '../shared/fribench-game-kit/avatars.mjs';
 import {mountJournal} from '../shared/fribench-game-kit/journal-view.mjs';
-import {handbookMarkup,mountHandbook,roleArt} from './handbook.mjs';
+import {handbookMarkup,mountHandbook} from './handbook.mjs';
+import {roleArt} from '../shared/media.mjs';
 import {AUDIO_TRACKS,getAudioSettings,setAudioSettings,playCue,preloadCue} from './audio.mjs';
 import {createSceneDirector} from './scenes.mjs';
+import {lightingMarkup,setLighting,updateLighting} from './lighting.mjs';
+import {EXPERIENCE_PATH,mountExperience} from './experience.mjs';
 import {frontDoorMarkup,mountFrontDoor} from './front-door.mjs';
 import {mountSeatDrag} from './seat-drag.mjs';
 import {publishDisplay,openPublicDisplay,mountPublicDisplay} from './public-display.mjs';
@@ -263,7 +266,7 @@ function renderHome(){
     root.querySelector('.portrait-readout h1').addEventListener('click',()=>{
       const now=performance.now();
       hits=now-last<420?hits+1:1;last=now;
-      if(hits===3){hits=0;previewScenes();}
+      if(hits===3){hits=0;soundSettings();}
     });
   }
   const reserved=Boolean(view&&!view.closed);
@@ -280,11 +283,6 @@ function offlineMenu(){
     ${saved?'<button id="restore-offline">恢复本机牌桌</button>':''}
     <button id="practice-menu">人机练习</button><button id="prepare-offline">准备离线素材</button><button id="home-offline-records">本机离线记录</button>
   </div>`);
-}
-
-function previewScenes(){
-  const options=[['deal','发放身份'],['vote','队伍表决'],['questGood','任务成功'],['questBad','任务失败'],['lady','湖中仙女'],['assassin','终局指认'],['winGood','好人胜利'],['winEvil','邪恶胜利']];
-  dialog('演出预览',`<div class="stack-actions"><button id="preview-audio">声音设置</button>${options.map(([id,label])=>`<button type="button" data-scene-demo="${id}">${label}</button>`).join('')}</div>`);
 }
 
 function accountMenu(check=true){
@@ -317,7 +315,11 @@ function accountMenu(check=true){
 
 function soundSettings(){
   const prefs=getAudioSettings();
-  dialog('声音设置',`<div class="sound-settings">
+  const home = $('app').dataset.screen==='home';
+  const keepTable = Boolean(view && !view.closed);
+  dialog(home?'设置':'声音与画面',`<div class="sound-settings device-settings">
+    ${home ? `<a class="button-link primary experience-link" href="${EXPERIENCE_PATH}"${keepTable?' target="_blank" rel="noopener"':''}>视听体验 <span aria-hidden="true">›</span></a>` : ''}
+    <section class="lighting-settings">${lightingMarkup()}</section>
     <section><label class="audio-toggle"><input type="checkbox" data-audio="music"${prefs.music?' checked':''}>背景音乐</label>
       <label for="audio-track">配乐</label><select id="audio-track" data-audio="track">${Object.entries(AUDIO_TRACKS).map(([id,label])=>`<option value="${id}"${prefs.track===id?' selected':''}>${label}</option>`).join('')}</select>
       <label class="audio-range">音乐音量 <output id="musicVolume-value">${prefs.musicVolume}%</output><input type="range" data-audio="musicVolume" value="${prefs.musicVolume}" min="0" max="100"></label>
@@ -517,7 +519,7 @@ function viewPlayer(id){
   const counts=g?.proposals.filter(item=>item.team.includes(id)).length;
   const ownEditable=own&&(!g||g.phase==='finished')&&transport.kind!=='practice';
   dialog(player.name,`<div class="player-card-detail">
-    ${publicRole?`<img class="player-end-portrait" src="${roleArt(g.roles[id])}" alt="" width="384" height="512">`:avatarImage(player.avatar,76)}
+    ${publicRole?`<img class="player-end-portrait" src="${roleArt(g.roles[id],view.players.indexOf(player))}" alt="" width="384" height="512">`:avatarImage(player.avatar,76)}
     <p>${publicRole?publicRole.name:player.online?'已连接':'离线'}</p>
     ${clue?`<p id="private-player-clue" class="intel">你的线索 · ${esc(clue.label)}</p>`:''}
     ${counts!==undefined?`<p>被选入队伍 ${counts} 次。</p>`:''}</div>`,'player-dialog',
@@ -542,8 +544,11 @@ function render(){
   const changed=root.dataset.screen!==screen;
   root.dataset.screen=screen;
   document.body.dataset.view=screen;
+  updateLighting(phase, view?.game?.winner);
   $('identity-header').hidden=screen!=='game'||phase==='reveal';
   $('account-menu').hidden=screen==='game';
+  $('audio-settings').textContent=screen==='home'?'设置':'♫';
+  $('audio-settings').setAttribute('aria-label',screen==='home'?'设置':'声音与画面');
   stages.sound(phase,view?.game?.winner);
   if(showHome||!view)renderHome();
   else if(view.closed)root.innerHTML='<section class="panel end-panel"><h1>房间已关闭</h1><p>你可以回首页再开一桌。</p><button id="go-home" class="primary">回到首页</button></section>';
@@ -583,7 +588,8 @@ function guide(section='rules',role=null){
   renderModalRound();
 }
 function peekRole(){if(!view?.game)return;const g=view.game,r=ROLES[g.myRole],confirmed=g.confirmed.includes(view.me);let hasPeeked=false,timer;
-  dialog('我的秘密身份',`<div id="private-wrapper"><p class="private-reminder">按住卡牌查看，松开立即遮住；键盘可按住空格或回车。</p><button class="role-cover" id="hold-role" aria-label="按住查看我的身份"><span class="cover-mark" aria-hidden="true"></span><span class="cover-text">按住查看身份</span><img src="${roleArt(g.myRole)}" alt="我的角色立绘" width="384" height="512"></button><div id="private-role-details" class="private-role"><h3 class="role-name">${r.name} <span class="badge ${r.side}">${r.side==='good'?'好人':'邪恶'}</span></h3><p class="role-desc">${r.description}</p>${g.intel.length?`<div class="intel"><strong>你掌握的信息</strong><br>${g.intel.map(p=>`${esc(name(p.id))} · ${p.label}`).join('<br>')}</div>`:'<p class="muted">你没有额外的开局身份信息。</p>'}</div></div>`,'private-dialog',g.phase==='reveal'&&!confirmed?'<button id="confirm-role" class="primary full" disabled>确认身份</button>':'');
+  const portrait = roleArt(g.myRole,view.players.findIndex(player => player.id === view.me));
+  dialog('我的秘密身份',`<div id="private-wrapper"><p class="private-reminder">按住卡牌查看，松开立即遮住；键盘可按住空格或回车。</p><button class="role-cover" id="hold-role" aria-label="按住查看我的身份"><span class="cover-mark" aria-hidden="true"></span><span class="cover-text">按住查看身份</span><img src="${portrait}" alt="我的角色立绘" width="384" height="512"></button><div id="private-role-details" class="private-role"><h3 class="role-name">${r.name} <span class="badge ${r.side}">${r.side==='good'?'好人':'邪恶'}</span></h3><p class="role-desc">${r.description}</p>${g.intel.length?`<div class="intel"><strong>你掌握的信息</strong><br>${g.intel.map(p=>`${esc(name(p.id))} · ${p.label}`).join('<br>')}</div>`:'<p class="muted">你没有额外的开局身份信息。</p>'}</div></div>`,'private-dialog',g.phase==='reveal'&&!confirmed?'<button id="confirm-role" class="primary full" disabled>确认身份</button>':'');
   const hold=$('hold-role'),wrapper=$('private-wrapper');hold.focus({preventScroll:true});const reveal=()=>{timer=setTimeout(()=>{wrapper.classList.add('is-peeking');playCue('reveal',{private:true});hasPeeked=true;if($('confirm-role'))$('confirm-role').disabled=false;},220);};const hide=()=>{clearTimeout(timer);wrapper.classList.remove('is-peeking');};
   hold.addEventListener('pointerdown',e=>{e.preventDefault();hold.setPointerCapture(e.pointerId);reveal();});for(const ev of ['pointerup','pointercancel','lostpointercapture','blur'])hold.addEventListener(ev,hide);
   hold.addEventListener('keydown',e=>{if([' ','Enter'].includes(e.key)&&!e.repeat){e.preventDefault();reveal();}});hold.addEventListener('keyup',hide);hold.addEventListener('contextmenu',e=>e.preventDefault());
@@ -977,6 +983,7 @@ document.addEventListener('submit',e=>{
 
 $('modal').addEventListener('input',e=>{
   const input=e.target,key=input.dataset.audio;
+  if(input.id==='scene-lighting'){setLighting(input.value);return;}
   if(!key)return;
   const value=input.type==='checkbox'?input.checked:input.type==='range'?input.valueAsNumber:input.value;
   const settings=setAudioSettings({[key]:value},e);
@@ -995,8 +1002,6 @@ document.addEventListener('click',e=>{
       playCue('pick');
       return;
     }
-    const demo=e.target.closest('[data-scene-demo]')?.dataset.sceneDemo;
-    if(demo){if(!stages.preview(demo))toast('当前演出仍在播放。');return;}
     const selectedPlayer=e.target.closest('[data-player-info]')?.dataset.playerInfo;
     if(selectedPlayer){viewPlayer(selectedPlayer);return;}
     const seat=e.target.closest('[data-seat]');
@@ -1022,7 +1027,7 @@ document.addEventListener('click',e=>{
       case 'player-records': case 'home-records': openRecords();return;
       case 'offline-records': case 'home-offline-records': showOfflineRecords();return;
       case 'account-menu': case 'account-details': accountMenu();return;
-      case 'audio-settings': case 'preview-audio': soundSettings();return;
+      case 'audio-settings': soundSettings();return;
       case 'preview-sound': playCue('success');return;
       case 'retry-online': if(!online.resume())void syncOnline();return;
       case 'use-account-profile': useAccountProfile();return;
@@ -1116,10 +1121,13 @@ window.visualViewport?.addEventListener('scroll',measureViewport);
 if('serviceWorker'in navigator&&window.isSecureContext)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 if(displayId&&/^[0-9a-f-]{36}$/.test(displayId)){
   mountPublicDisplay($('app'),displayId,{
-    sound:(phase,winner)=>stages.sound(phase,winner),
+    sound:(phase,winner)=>{updateLighting(phase,winner);stages.sound(phase,winner);},
     settings:soundSettings,
     animate:(old,next)=>stages.update(old,next,{publicOnly:true,live:Boolean(old)}),
   });
+}else if(query.get('preview')==='effects'){
+  updateLighting('home');
+  mountExperience($('app'));
 }else{
   for(const path of ['/_fribench/client.js','/_fribench/account-view.js']){
     const script=document.createElement('script');script.async=false;script.src=path;document.head.append(script);

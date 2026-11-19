@@ -101,7 +101,7 @@ try{
   await click(pages[0],'home-handbook');
   await pages[0].getByRole('tab',{name:'角色图鉴'}).waitFor();
   await pages[0].locator('.handbook-role-button[data-role="merlin"]').click();
-  assert.equal(await pages[0].locator('.handbook-profile img').first().getAttribute('src'),'/art/night/merlin.webp');
+  assert.equal(await pages[0].locator('.handbook-profile img').first().getAttribute('src'),'/art/court/merlin.webp');
   await pages[0].locator('[data-role-back]').first().click();
   await click(pages[0],'modal-close');
   await click(pages[0],'audio-settings');
@@ -113,6 +113,7 @@ try{
   assert.equal(await pages[0].locator('[data-audio=effects]').isChecked(),false);
   await click(pages[0],'modal-close');
   await setupOnline(pages[0]);const code=await pages[0].locator('.room-code').textContent();
+  assert.equal(await pages[0].locator('body').getAttribute('data-lighting'),'day','随对局时大厅使用日景');
   for(const p of pages.slice(1))await setupOnline(p,code);
   await fixedViewport(mobile);
   const lobby=(await snapshot(pages[0])).players;
@@ -125,6 +126,7 @@ try{
   assert.equal((await snapshot(pages[0])).players[0].id,lobby[1].id,'长按排序由服务端保存');
   for(const p of pages)await click(p,'ready');await click(pages[0],'start');
   await phase(pages[0],'确认身份');
+  assert.equal(await pages[0].locator('body').getAttribute('data-lighting'),'night','随对局时身份确认使用夜景');
   await pages[0].screenshot({path:'test-results/desktop-reveal.png',fullPage:true});
   const before=await snapshot(pages[0]);assert(!('roles'in before.game));assert(!('questCards'in before.game));
   await pages[0].locator('#peek-role').first().click();await click(pages[0],'modal-close');assert.equal((await snapshot(pages[0])).game.phase,'reveal');
@@ -201,13 +203,25 @@ try{
   const cached=await player('缓存玩家');await click(cached,'offline-menu');await click(cached,'prepare-offline');await cached.getByText('离线素材已准备好。断网后可再次打开本站或主屏幕入口。',{exact:true}).waitFor();
   await cached.context().setOffline(true);await cached.reload();await setupOffline(cached);await cached.locator('.room-code').waitFor();
   const cachedMedia=await cached.evaluate(async()=>{
-    const art=await fetch('/art/night/merlin.webp');
+    const art=await fetch('/art/court/merlin.webp');
     const table=await fetch('/art/council-table.webp');
     const legacyArt=await fetch('/art/merlin.webp');
+    const variant=await fetch('/art/court/servant-4.webp');
+    const day=await fetch('/art/court/hall-day.webp');
     const music=await fetch('/audio/hall.mp3',{headers:{Range:'bytes=0-31'}});
-    return [art.status,table.status,legacyArt.status,music.status,(await music.arrayBuffer()).byteLength];
+    return [art.status,table.status,legacyArt.status,variant.status,day.status,music.status,(await music.arrayBuffer()).byteLength];
   });
-  assert.deepEqual(cachedMedia,[200,200,200,206,32]);
+  assert.deepEqual(cachedMedia,[200,200,200,200,200,206,32]);
+  await cached.goto(base+'/?preview=effects');
+  await cached.getByRole('heading',{name:'视听体验'}).waitFor();
+  await cached.locator('[data-experience-item="lady"]').click();
+  await cached.locator('#experience-sound').uncheck();
+  await click(cached,'experience-play');
+  const lakeArt=cached.locator('#experience-stage .cinematic-portrait');
+  assert.equal(await lakeArt.getAttribute('src'),'/art/court/lady.webp');
+  await lakeArt.evaluate(img=>img.decode());
+  await click(cached,'experience-stop');
+  assert.equal(await cached.locator('#experience-stage .cinematic-dialog').count(),0);
   const practice=await player('练习玩家',true);
   await click(practice,'offline-menu');await click(practice,'practice-menu');
   await practice.locator('#practice-count').selectOption('7');await practice.locator('#practice-role').selectOption('merlin');
